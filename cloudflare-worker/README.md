@@ -82,6 +82,8 @@ The Worker is configured in `wrangler.toml` and binds the existing D1 database a
 
 Only after the SQL migrations, Worker code and secrets are ready, configure Telegram's webhook to `https://<WORKER_HOST>/telegram`, with the exact same `WEBHOOK_SECRET` value set as Telegram's `secret_token`. Telegram then sends the header `X-Telegram-Bot-Api-Secret-Token`, which the Worker verifies.
 
+For Windows, run `powershell -ExecutionPolicy Bypass -File .\\cloudflare-worker\\scripts\\set-webhook.ps1` from the repository root. The script asks for the Worker URL and reads the bot token and secret through secure prompts; it does not save them in the repository.
+
 The currently running Python bot uses long polling. Stop that process before enabling the webhook for the same bot token; Telegram does not deliver updates using long polling while an outgoing webhook is set. Keep the Python version and its database as a rollback copy, but do not run both delivery modes simultaneously.
 
 ## Administrator commands
