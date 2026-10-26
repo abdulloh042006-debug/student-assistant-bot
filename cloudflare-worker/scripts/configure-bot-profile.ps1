@@ -42,7 +42,8 @@ Assalomu alaykum! Student Assistant - talabalar uchun elektron topshiriqlar bo'y
 - To'lov cheki va kerakli hujjatlarni yuboring.
 
 Yakuniy narx va muddat administrator tasdig'idan keyin belgilanadi.
-"@.Trim()
+"@
+$description = $description.Trim()
 
 try {
     $me = Invoke-RestMethod -Method Get -Uri ("https://api.telegram.org/bot" + $script:BotToken + "/getMe") -ErrorAction Stop
