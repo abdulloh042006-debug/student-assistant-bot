@@ -772,20 +772,21 @@ export default {
       return responseJson({ ok: false, error: "Unauthorized" }, 401);
     }
     let update = null;
-    let insertedUpdateId = null;
     try {
       update = await request.json();
       if (Number.isSafeInteger(update.update_id)) {
         const inserted = await env.DB.prepare("INSERT OR IGNORE INTO webhook_updates(update_id) VALUES(?)").bind(update.update_id).run();
         if (inserted.meta && inserted.meta.changes === 0) return responseJson({ ok: true, duplicate: true });
-        insertedUpdateId = update.update_id;
       }
       if (update.callback_query) await handleCallback(env, update.callback_query);
       else if (update.message) await handleMessage(env, update.message);
       return responseJson({ ok: true });
     } catch (error) {
       console.error("Telegram update processing failed", error && error.message ? error.message : "unknown");
-      // Keep the update_id after a handler failure: retrying must not create duplicate orders or claims.
+      // Release the deduplication key when processing fails so Telegram can retry the update.
+      if (update && Number.isSafeInteger(update.update_id)) {
+        try { await env.DB.prepare("DELETE FROM webhook_updates WHERE update_id=?").bind(update.update_id).run(); } catch (_) {}
+      }
       return responseJson({ ok: false, error: "Update handling failed" }, 500);
     }
   }
