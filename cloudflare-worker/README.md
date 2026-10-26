@@ -46,7 +46,7 @@ Optional secrets:
 
 ### Prepare secrets safely (do not deploy yet)
 
-For the first deployment, create a local file named `.env.production` in the repository root. Keep it out of GitHub; the root `.gitignore` excludes `.env.*` files.
+For the first deployment, copy `.env.production.example` to `.env.production` in the repository root, then replace the three placeholder values. In PowerShell, run `Copy-Item .env.production.example .env.production` and edit `.env.production` with a local text editor. Keep `.env.production` out of GitHub; the root `.gitignore` excludes it.
 
 Required entries:
 
