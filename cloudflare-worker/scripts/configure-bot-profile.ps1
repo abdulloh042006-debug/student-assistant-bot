@@ -63,6 +63,7 @@ try {
     Invoke-TelegramJson -Method "setMyCommands" -Payload @{
         commands = @(
             @{ command = "start"; description = "Botni ishga tushirish" },
+            @{ command = "yordam"; description = "Yordam va foydalanish yo‘riqnomasi" },
             @{ command = "cancel"; description = "Joriy amalni bekor qilish" }
         )
     } | Out-Null
