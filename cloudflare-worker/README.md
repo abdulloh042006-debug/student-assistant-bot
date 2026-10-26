@@ -28,7 +28,7 @@ Apply the remaining SQL files in this exact order, once each, to that same datab
 
 Open **Cloudflare Dashboard → Storage & databases → D1 → student-assistant-bot → Console**, copy the full contents of each migration file from GitHub, and execute them in order. These migrations add new tables/columns without dropping the existing order rows. **Do not run `schema.sql` again against the existing database.** Do not run the same migration twice: SQLite `ALTER TABLE ADD COLUMN` statements are intentionally one-time.
 
-CI includes a SQLite regression test that applies the base schema and both migrations to a clean test database, then verifies that an existing order survives and the new tables work.
+CI applies the base schema and both migrations to a clean SQLite test database, verifies that an existing order survives, checks the new columns and indexes, and tests webhook retry/deduplication states. Receipt creation and receipt/discount review database updates use atomic D1 batches to reduce partially written states.
 
 ## Configuration secrets
 
