@@ -135,26 +135,50 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
   const appliedNow = requiresReview ? [] : discounts;
   const calc = calculateDiscount(estimate, appliedNow);
   const appliedIds = appliedNow.map(d => Number(d.id));
-  const insert = await env.DB.prepare(
-    "INSERT INTO orders(user_id,username,service,description,quantity,deadline,budget,priority,estimate,discount_amount,applied_discount_ids,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
-  ).bind(
-    message.from.id, message.from.username || "", data.service, data.description, data.quantity,
-    data.deadline, data.budget || "", data.priority || "", estimate, calc.discountAmount,
-    JSON.stringify(appliedIds), new Date().toISOString()
-  ).run();
-  const orderId = Number(insert.meta.last_row_id);
-  for (const discount of discounts) {
-    const needsReview = Number(discount.requires_review) === 1;
-    await env.DB.prepare("INSERT INTO discount_claims(discount_id,user_id,order_id,status,proof_file_id) VALUES(?,?,?,?,?) ON CONFLICT(discount_id,user_id) DO UPDATE SET order_id=excluded.order_id,status=excluded.status,proof_file_id=excluded.proof_file_id,created_at=CURRENT_TIMESTAMP WHERE discount_claims.status='rejected'")
-      .bind(discount.id, message.from.id, orderId, needsReview ? "pending" : "approved", needsReview && proofFile ? proofFile.file_id : null).run();
-    if (!needsReview) {
-      await env.DB.prepare("UPDATE discounts SET uses_count=uses_count+1 WHERE id=?").bind(discount.id).run();
+  const reservedDiscountIds = [];
+  let orderId = null;
+
+  // Reserve limited uses through a conditional UPDATE so concurrent requests cannot overrun max_uses.
+  try {
+    for (const discount of discounts) {
+      const reserve = await env.DB.prepare("UPDATE discounts SET uses_count=uses_count+1 WHERE id=? AND active=1 AND (max_uses IS NULL OR uses_count<max_uses)")
+        .bind(discount.id).run();
+      if (!reserve.meta.changes) throw new Error("Discount is inactive or usage limit was reached.");
+      reservedDiscountIds.push(Number(discount.id));
     }
+    const insert = await env.DB.prepare(
+      "INSERT INTO orders(user_id,username,service,description,quantity,deadline,budget,priority,estimate,discount_amount,applied_discount_ids,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).bind(
+      message.from.id, message.from.username || "", data.service, data.description, data.quantity,
+      data.deadline, data.budget || "", data.priority || "", estimate, calc.discountAmount,
+      JSON.stringify(appliedIds), new Date().toISOString()
+    ).run();
+    orderId = Number(insert.meta.last_row_id);
+    for (const discount of discounts) {
+      const needsReview = Number(discount.requires_review) === 1;
+      await env.DB.prepare("INSERT INTO discount_claims(discount_id,user_id,order_id,status,proof_file_id) VALUES(?,?,?,?,?) ON CONFLICT(discount_id,user_id) DO UPDATE SET order_id=excluded.order_id,status=excluded.status,proof_file_id=excluded.proof_file_id,created_at=CURRENT_TIMESTAMP WHERE discount_claims.status='rejected'")
+        .bind(discount.id, message.from.id, orderId, needsReview ? "pending" : "approved", needsReview && proofFile ? proofFile.file_id : null).run();
+      const savedClaim = await env.DB.prepare("SELECT order_id,status FROM discount_claims WHERE discount_id=? AND user_id=?").bind(discount.id, message.from.id).first();
+      if (!savedClaim || Number(savedClaim.order_id) !== orderId || savedClaim.status !== (needsReview ? "pending" : "approved")) {
+        throw new Error("Discount claim could not be saved for this order.");
+      }
+    }
+    if (proofFile) {
+      await env.DB.prepare("INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','pending',?,?,?)")
+        .bind(orderId, message.from.id, proofFile.file_id, proofFile.file_unique_id || null, proofFile.file_name || "", proofFile.mime_type || "", proofFile.media_type, message.chat.id, message.message_id).run();
+    }
+  } catch (error) {
+    if (orderId !== null) {
+      try { await env.DB.prepare("DELETE FROM order_attachments WHERE order_id=?").bind(orderId).run(); } catch (_) {}
+      try { await env.DB.prepare("DELETE FROM discount_claims WHERE order_id=? AND status IN ('pending','approved')").bind(orderId).run(); } catch (_) {}
+      try { await env.DB.prepare("DELETE FROM orders WHERE id=?").bind(orderId).run(); } catch (_) {}
+    }
+    for (const discountId of reservedDiscountIds) {
+      try { await env.DB.prepare("UPDATE discounts SET uses_count=CASE WHEN uses_count>0 THEN uses_count-1 ELSE 0 END WHERE id=?").bind(discountId).run(); } catch (_) {}
+    }
+    throw error;
   }
-  if (proofFile) {
-    await env.DB.prepare("INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','pending',?,?,?)")
-      .bind(orderId, message.from.id, proofFile.file_id, proofFile.file_unique_id || null, proofFile.file_name || "", proofFile.mime_type || "", proofFile.media_type, message.chat.id, message.message_id).run();
-  }
+
   await clearSession(env, message.from.id);
   const reply = requiresReview
     ? "✅ Buyurtma #" + orderId + " qabul qilindi. Chegirma hujjati tekshirilgach narx yangilanadi. Hozirgi taxminiy narx: " + estimate.toLocaleString("uz-UZ") + " so‘m."
@@ -184,9 +208,7 @@ async function findDiscountsForOrder(env, uid, service, rawNames) {
     const discount = await env.DB.prepare("SELECT * FROM discounts WHERE lower(name)=lower(?) ORDER BY id DESC LIMIT 1").bind(name).first();
     if (!discount) return { discounts: [], error: "Chegirma topilmadi: " + name + ". Nomini /discounts ro‘yxatidan tekshiring yoki yo‘q deb yozing." };
     const existing = await env.DB.prepare("SELECT status FROM discount_claims WHERE discount_id=? AND user_id=? AND status IN ('pending','approved')").bind(discount.id, uid).first();
-    const pending = await env.DB.prepare("SELECT COUNT(*) AS n FROM discount_claims WHERE discount_id=? AND status='pending'").bind(discount.id).first();
-    const availability = Object.assign({}, discount, { uses_count: Number(discount.uses_count) + Number(pending ? pending.n : 0) });
-    const reason = discountEligibility(availability, service, new Date(), Boolean(existing));
+    const reason = discountEligibility(discount, service, new Date(), Boolean(existing));
     if (reason) return { discounts: [], error: name + ": " + reason };
     discounts.push(discount);
   }
@@ -490,16 +512,13 @@ async function handleCallback(env, q) {
     if (!claim) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rilgan yoki topilmadi.");
     if (data[1] === "reject") {
       await env.DB.prepare("UPDATE discount_claims SET status='rejected' WHERE id=? AND status='pending'").bind(claimId).run();
+      await env.DB.prepare("UPDATE discounts SET uses_count=CASE WHEN uses_count>0 THEN uses_count-1 ELSE 0 END WHERE id=?").bind(claim.discount_id).run();
       await send(env, claim.order_user, "❌ Buyurtma #" + claim.order_id + " uchun hujjatli chegirma tasdiqlanmadi. Administrator bilan bog‘lanishingiz mumkin.");
       return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " rad etildi.");
     }
-    if (claim.max_uses !== null && Number(claim.uses_count) >= Number(claim.max_uses)) {
-      return send(env, Number(env.ADMIN_ID), "Chegirma foydalanish limiti to‘lgan. So‘rovni rad eting yoki limitni oshiring.");
-    }
     const calc = calculateDiscount(Number(claim.estimate), [{ kind: claim.kind, amount: claim.amount }]);
     await env.DB.prepare("UPDATE discount_claims SET status='approved' WHERE id=? AND status='pending'").bind(claimId).run();
-    await env.DB.prepare("UPDATE discounts SET uses_count=uses_count+1 WHERE id=?").bind(claim.discount_id).run();
-    await env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=? WHERE id=?")
+    await env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=?,final_price=NULL WHERE id=?")
       .bind(calc.discountAmount, JSON.stringify([Number(claim.discount_id)]), claim.order_id).run();
     await send(env, claim.order_user, "✅ Hujjatli chegirma buyurtma #" + claim.order_id + " uchun tasdiqlandi. Chegirma: " + calc.discountAmount.toLocaleString("uz-UZ") + " so‘m. Chegirmadan keyingi taxmin: " + calc.finalPrice.toLocaleString("uz-UZ") + " so‘m. Yakuniy narxni administrator tasdiqlaydi.");
     return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " tasdiqlandi.");
