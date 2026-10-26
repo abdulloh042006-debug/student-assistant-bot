@@ -783,17 +783,33 @@ export default {
     let update = null;
     try {
       update = await request.json();
-      if (Number.isSafeInteger(update.update_id)) {
-        const inserted = await env.DB.prepare("INSERT OR IGNORE INTO webhook_updates(update_id) VALUES(?)").bind(update.update_id).run();
-        if (inserted.meta && inserted.meta.changes === 0) return responseJson({ ok: true, duplicate: true });
+      if (!Number.isSafeInteger(update.update_id)) {
+        return responseJson({ ok: false, error: "Invalid Telegram update ID" }, 400);
       }
+      // Claim an update while processing it. Successful updates are permanently deduplicated;
+      // failures can be retried, and stale processing claims expire after two minutes.
+      const claim = await env.DB.prepare(
+        "INSERT INTO webhook_updates(update_id,status,updated_at,attempt_count) VALUES(?,'processing',CURRENT_TIMESTAMP,1) " +
+        "ON CONFLICT(update_id) DO UPDATE SET status='processing',updated_at=CURRENT_TIMESTAMP,attempt_count=webhook_updates.attempt_count+1 " +
+        "WHERE webhook_updates.status='failed' OR (webhook_updates.status='processing' AND webhook_updates.updated_at < datetime('now','-2 minutes'))"
+      ).bind(update.update_id).run();
+      if (!claim.meta || claim.meta.changes === 0) return responseJson({ ok: true, duplicate: true });
+
       if (update.callback_query) await handleCallback(env, update.callback_query);
       else if (update.message) await handleMessage(env, update.message);
+      await env.DB.prepare("UPDATE webhook_updates SET status='processed',updated_at=CURRENT_TIMESTAMP WHERE update_id=? AND status='processing'")
+        .bind(update.update_id).run();
       return responseJson({ ok: true });
     } catch (error) {
       console.error("Telegram update processing failed", error && error.message ? error.message : "unknown");
-      // Keep the deduplication key: a handler may have already written data or sent messages
-      // before a later operation failed, so automatic reprocessing could duplicate side effects.
+      // Release the failed claim for Telegram's retry. After the two-minute lease expires,
+      // a crashed invocation can also be retried.
+      if (update && Number.isSafeInteger(update.update_id)) {
+        try {
+          await env.DB.prepare("UPDATE webhook_updates SET status='failed',updated_at=CURRENT_TIMESTAMP WHERE update_id=? AND status='processing'")
+            .bind(update.update_id).run();
+        } catch (_) {}
+      }
       return responseJson({ ok: false, error: "Update handling failed" }, 500);
     }
   }
