@@ -23,13 +23,20 @@ class MigrationTests(unittest.TestCase):
 
         columns = {row[1] for row in db.execute("PRAGMA table_info(order_attachments)")}
         self.assertTrue({"media_type", "source_chat_id", "source_message_id"}.issubset(columns))
+        payment_columns = {row[1] for row in db.execute("PRAGMA table_info(payment_reviews)")}
+        self.assertTrue({"source_chat_id", "source_message_id"}.issubset(payment_columns))
 
         db.execute(
             "INSERT INTO order_attachments(order_id,user_id,file_id,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(1,101,'file-1','receipt','pending','photo',101,55)"
         )
         db.execute(
-            "INSERT INTO payment_reviews(order_id,user_id,file_id,status) VALUES(1,101,'file-1','pending')"
+            "INSERT INTO payment_reviews(order_id,user_id,file_id,status,source_chat_id,source_message_id) VALUES(1,101,'file-1','pending',101,55)"
         )
+        # Only one unresolved receipt is permitted for each order.
+        with self.assertRaises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO payment_reviews(order_id,user_id,file_id,status,source_chat_id,source_message_id) VALUES(1,101,'file-2','pending',101,56)"
+            )
         claim_sql = """
             INSERT INTO webhook_updates(update_id,status,updated_at,attempt_count)
             VALUES(?,'processing',CURRENT_TIMESTAMP,1)
