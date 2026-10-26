@@ -624,13 +624,16 @@ async function handleCallback(env, q) {
     const review = await env.DB.prepare("SELECT * FROM payment_reviews WHERE id=? AND status='pending'").bind(reviewId).first();
     if (!review) return send(env, Number(env.ADMIN_ID), "Chek allaqachon ko‘rilgan yoki topilmadi.");
     const newStatus = data[1] === "approve" ? "approved" : "rejected";
-    const result = await env.DB.prepare("UPDATE payment_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'")
-      .bind(newStatus, q.from.id, reviewId).run();
-    if (!result.meta.changes) return send(env, Number(env.ADMIN_ID), "Chek allaqachon ko‘rib chiqilgan.");
-    await env.DB.prepare("UPDATE orders SET payment_status=? WHERE id=?")
-      .bind(newStatus === "approved" ? "To‘lov tasdiqlandi" : "To‘lov rad etildi", review.order_id).run();
-    await env.DB.prepare("UPDATE order_attachments SET review_status=? WHERE order_id=? AND user_id=? AND kind='receipt' AND review_status='pending'")
-      .bind(newStatus, review.order_id, review.user_id).run();
+    const orderPaymentStatus = newStatus === "approved" ? "To‘lov tasdiqlandi" : "To‘lov rad etildi";
+    const result = await env.DB.batch([
+      env.DB.prepare("UPDATE payment_reviews SET status=?,reviewed_by=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'")
+        .bind(newStatus, q.from.id, reviewId),
+      env.DB.prepare("UPDATE orders SET payment_status=? WHERE id=? AND EXISTS (SELECT 1 FROM payment_reviews WHERE id=? AND status=? AND reviewed_by=?)")
+        .bind(orderPaymentStatus, review.order_id, reviewId, newStatus, q.from.id),
+      env.DB.prepare("UPDATE order_attachments SET review_status=? WHERE order_id=? AND user_id=? AND kind='receipt' AND review_status='pending' AND EXISTS (SELECT 1 FROM payment_reviews WHERE id=? AND status=? AND reviewed_by=?)")
+        .bind(newStatus, review.order_id, review.user_id, reviewId, newStatus, q.from.id)
+    ]);
+    if (!result[0].meta.changes) return send(env, Number(env.ADMIN_ID), "Chek allaqachon ko‘rib chiqilgan.");
     await send(env, review.user_id, newStatus === "approved"
       ? "✅ Buyurtma #" + review.order_id + " uchun to‘lov tasdiqlandi."
       : "❌ Buyurtma #" + review.order_id + " uchun chek tasdiqlanmadi. «📤 To‘lov chekini yuborish» orqali yangi chek yuboring.", { reply_markup: mainMenu });
@@ -648,19 +651,28 @@ async function handleCallback(env, q) {
     const claim = await env.DB.prepare("SELECT c.*,d.kind,d.amount,d.active,d.max_uses,d.uses_count,o.estimate,o.user_id AS order_user FROM discount_claims c JOIN discounts d ON d.id=c.discount_id JOIN orders o ON o.id=c.order_id WHERE c.id=? AND c.status='pending'").bind(claimId).first();
     if (!claim) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rilgan yoki topilmadi.");
     if (data[1] === "reject") {
-      const changed = await env.DB.prepare("UPDATE discount_claims SET status='rejected' WHERE id=? AND status='pending'").bind(claimId).run();
-      if (!changed.meta.changes) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rib chiqilgan.");
-      await env.DB.prepare("UPDATE order_attachments SET review_status='rejected' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment'").bind(claim.order_id, claim.order_user).run();
-      await env.DB.prepare("UPDATE discounts SET uses_count=CASE WHEN uses_count>0 THEN uses_count-1 ELSE 0 END WHERE id=?").bind(claim.discount_id).run();
+      const changed = await env.DB.batch([
+        env.DB.prepare("UPDATE discounts SET uses_count=CASE WHEN uses_count>0 THEN uses_count-1 ELSE 0 END WHERE id=? AND EXISTS (SELECT 1 FROM discount_claims WHERE id=? AND status='pending')")
+          .bind(claim.discount_id, claimId),
+        env.DB.prepare("UPDATE order_attachments SET review_status='rejected' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment' AND EXISTS (SELECT 1 FROM discount_claims WHERE id=? AND status='pending')")
+          .bind(claim.order_id, claim.order_user, claimId),
+        env.DB.prepare("UPDATE discount_claims SET status='rejected' WHERE id=? AND status='pending'")
+          .bind(claimId)
+      ]);
+      if (!changed[2].meta.changes) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rib chiqilgan.");
       await send(env, claim.order_user, "❌ Buyurtma #" + claim.order_id + " uchun hujjatli chegirma tasdiqlanmadi. Administrator bilan bog‘lanishingiz mumkin.");
       return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " rad etildi.");
     }
     const calc = calculateDiscount(Number(claim.estimate), [{ kind: claim.kind, amount: claim.amount }]);
-    const changed = await env.DB.prepare("UPDATE discount_claims SET status='approved' WHERE id=? AND status='pending'").bind(claimId).run();
-    if (!changed.meta.changes) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rib chiqilgan.");
-    await env.DB.prepare("UPDATE order_attachments SET review_status='approved' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment'").bind(claim.order_id, claim.order_user).run();
-    await env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=?,final_price=NULL WHERE id=?")
-      .bind(calc.discountAmount, JSON.stringify([Number(claim.discount_id)]), claim.order_id).run();
+    const changed = await env.DB.batch([
+      env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=?,final_price=NULL WHERE id=? AND EXISTS (SELECT 1 FROM discount_claims WHERE id=? AND status='pending')")
+        .bind(calc.discountAmount, JSON.stringify([Number(claim.discount_id)]), claim.order_id, claimId),
+      env.DB.prepare("UPDATE order_attachments SET review_status='approved' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment' AND EXISTS (SELECT 1 FROM discount_claims WHERE id=? AND status='pending')")
+        .bind(claim.order_id, claim.order_user, claimId),
+      env.DB.prepare("UPDATE discount_claims SET status='approved' WHERE id=? AND status='pending'")
+        .bind(claimId)
+    ]);
+    if (!changed[2].meta.changes) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rib chiqilgan.");
     await send(env, claim.order_user, "✅ Hujjatli chegirma buyurtma #" + claim.order_id + " uchun tasdiqlandi. Chegirma: " + calc.discountAmount.toLocaleString("uz-UZ") + " so‘m. Chegirmadan keyingi taxmin: " + calc.finalPrice.toLocaleString("uz-UZ") + " so‘m. Yakuniy narxni administrator tasdiqlaydi.");
     return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " tasdiqlandi. Buyurtma #" + claim.order_id + " uchun tasdiqlangan narx olib tashlandi — chegirmali taxminni tekshirib, «💵 Narx/muddatni tasdiqlash» tugmasi orqali yakuniy narxni qayta tasdiqlang.");
   }
