@@ -20,3 +20,5 @@ jobs:
           node --check cloudflare-worker/src/domain.js
       - name: Run domain tests
         run: node --test tests/domain.test.js
+      - name: Validate SQLite migrations preserve data
+        run: python tests/test_migrations.py
