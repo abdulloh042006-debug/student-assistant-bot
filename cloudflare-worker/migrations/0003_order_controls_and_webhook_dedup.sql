@@ -9,6 +9,16 @@ ALTER TABLE order_attachments ADD COLUMN media_type TEXT NOT NULL DEFAULT 'docum
 ALTER TABLE order_attachments ADD COLUMN source_chat_id INTEGER;
 ALTER TABLE order_attachments ADD COLUMN source_message_id INTEGER;
 
+ALTER TABLE payment_reviews ADD COLUMN source_chat_id INTEGER;
+ALTER TABLE payment_reviews ADD COLUMN source_message_id INTEGER;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_attachments_source
+  ON order_attachments(order_id, source_chat_id, source_message_id, kind);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_reviews_source_message
+  ON payment_reviews(order_id, source_chat_id, source_message_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_reviews_one_pending_per_order
+  ON payment_reviews(order_id) WHERE status='pending';
+
 CREATE TABLE IF NOT EXISTS webhook_updates (
   update_id INTEGER PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'processing' CHECK(status IN ('processing','processed','failed')),
