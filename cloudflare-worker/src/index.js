@@ -49,7 +49,7 @@ async function handleMessage(env,m) {
  if(text==='/start'){await clearSession(env,uid);return send(env,chat,'Assalomu alaykum! Student Assistant botiga xush kelibsiz.\n\nChek yoki topshiriq faylini yuborsangiz, oxirgi buyurtmangizga biriktiriladi.',{reply_markup:mainMenu});}
  if(String(uid)===String(env.ADMIN_ID) && text==='/discounts') {
   const rows=await env.DB.prepare('SELECT id,name,kind,amount,active,uses_count,max_uses,service,requires_review FROM discounts ORDER BY id DESC LIMIT 30').all();
-  return send(env,chat,rows.results.length?rows.results.map(d=>'#'+d.id+' '+d.name+' — '+(d.kind==='percent'?d.amount+'%':d.amount+' so‘m')+'; '+(d.active?'faol':'nofaol')+'; ishlatilgan: '+d.uses_count+(d.max_uses===null?'':'/'+d.max_uses)+'; xizmat: '+(d.service||'barchasi')+'; tekshiruv: '+(d.requires_review?'ha':'yo‘q')).join('\n'):'Chegirmalar hali yo‘q. Yaratish: /newdiscount'): 'Chegirmalar ro‘yxati');
+  return send(env,chat,rows.results.length?rows.results.map(d=>'#'+d.id+' '+d.name+' — '+(d.kind==='percent'?d.amount+'%':d.amount+' so‘m')+'; '+(d.active?'faol':'nofaol')+'; ishlatilgan: '+d.uses_count+(d.max_uses===null?'':'/'+d.max_uses)+'; xizmat: '+(d.service||'barchasi')+'; tekshiruv: '+(d.requires_review?'ha':'yo‘q')).join('\n'):'Chegirmalar hali yo‘q. Yaratish: /newdiscount');
  }
  if(String(uid)===String(env.ADMIN_ID) && text==='/newdiscount') {
   await saveSession(env,uid,'discount_name',{});
