@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Student Assistant</title>
+  <desc id="desc">Navy and gold student assistant robot with graduation cap and book.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="80%"><stop offset="0" stop-color="#18263b"/><stop offset="1" stop-color="#05080f"/></radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.9" y2="1"><stop stop-color="#fff0ae"/><stop offset=".45" stop-color="#f7c45c"/><stop offset="1" stop-color="#b97819"/></linearGradient>
+    <linearGradient id="silver" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#fff"/><stop offset=".55" stop-color="#c9d3e2"/><stop offset="1" stop-color="#74849b"/></linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#19273c"/><stop offset="1" stop-color="#03060c"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="512" cy="512" r="488" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="466" fill="none" stroke="url(#gold)" stroke-width="8"/>
+  <g stroke-linejoin="round">
+    <path d="M315 205 L512 130 L710 205 L512 274 Z" fill="#111b2c" stroke="#7d8da5" stroke-width="8"/>
+    <path d="M710 205 V287" fill="none" stroke="url(#gold)" stroke-width="8"/>
+    <circle cx="710" cy="294" r="11" fill="url(#gold)"/>
+    <path d="M700 304 L720 304 L727 348 L693 348 Z" fill="url(#gold)"/>
+    <rect x="350" y="230" width="324" height="254" rx="100" fill="url(#silver)" stroke="#f7f9ff" stroke-width="5"/>
+    <rect x="381" y="272" width="262" height="168" rx="66" fill="url(#visor)" stroke="#64748b" stroke-width="5"/>
+    <path d="M435 354 Q457 320 479 354" fill="none" stroke="url(#gold)" stroke-width="15" stroke-linecap="round" filter="url(#glow)"/>
+    <path d="M544 354 Q566 320 588 354" fill="none" stroke="url(#gold)" stroke-width="15" stroke-linecap="round" filter="url(#glow)"/>
+    <circle cx="352" cy="355" r="34" fill="#111c2e" stroke="url(#gold)" stroke-width="9"/>
+    <path d="M400 469 Q512 516 624 469 L647 510 Q512 574 377 510 Z" fill="url(#silver)"/>
+    <path d="M310 515 Q407 486 506 535 L506 651 Q407 607 310 635 Z" fill="#0d182a" stroke="url(#gold)" stroke-width="7"/>
+    <path d="M714 515 Q615 486 518 535 L518 651 Q615 607 714 635 Z" fill="#111f34" stroke="url(#gold)" stroke-width="7"/>
+    <path d="M512 536 V650" stroke="#d8a13d" stroke-width="7"/>
+    <circle cx="717" cy="546" r="67" fill="#0b1423" stroke="url(#gold)" stroke-width="9"/>
+    <path d="M683 543 L750 518 L731 575 L712 559 L700 568 Z" fill="url(#gold)"/>
+  </g>
+  <text x="512" y="735" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="73" font-weight="800" letter-spacing="5" fill="#f7f8fc">STUDENT</text>
+  <text x="512" y="813" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="77" font-weight="800" letter-spacing="2" fill="url(#gold)">ASSISTANT</text>
+  <text x="512" y="861" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="7" fill="#e6eaf2">BIZ BILAN OSONROQ</text>
+  <path d="M350 898 H453 M571 898 H674" stroke="url(#gold)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M512 882 L538 895 L512 908 L486 895 Z" fill="url(#gold)"/>
+  <text x="512" y="937" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="6" fill="url(#gold)">TELEGRAM BOT</text>
+</svg>
