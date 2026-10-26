@@ -129,6 +129,17 @@ async function latestOrder(env, uid, unpaidOnly = false) {
     : "SELECT id,service,status,payment_status FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 1";
   return env.DB.prepare(sql).bind(uid).first();
 }
+async function submitOrderSafely(env, message, data, discounts = [], proofFile = null) {
+  try {
+    await createOrder(env, message, data, discounts, proofFile);
+    return true;
+  } catch (error) {
+    console.error("Order could not be saved", error && error.message ? error.message : "unknown");
+    try { await clearSession(env, message.from.id); } catch (_) {}
+    try { await send(env, message.chat.id, "Buyurtma hozir saqlanmadi. Chegirma yoki foydalanish limiti o‘zgargan bo‘lishi mumkin. /start orqali qayta urinib ko‘ring.", { reply_markup: mainMenu }); } catch (_) {}
+    return false;
+  }
+}
 async function latestReceiptOrder(env, uid) {
   return env.DB.prepare("SELECT id,service,status,payment_status FROM orders WHERE user_id=? AND payment_status IN ('To‘lov kutilmoqda','To‘lov rad etildi') ORDER BY id DESC LIMIT 1").bind(uid).first();
 }
@@ -182,20 +193,25 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
     throw error;
   }
 
-  await clearSession(env, message.from.id);
+  try { await clearSession(env, message.from.id); } catch (_) { console.error("Could not clear completed order session"); }
   const reply = requiresReview
     ? "✅ Buyurtma #" + orderId + " qabul qilindi. Chegirma hujjati tekshirilgach narx yangilanadi. Hozirgi taxminiy narx: " + estimate.toLocaleString("uz-UZ") + " so‘m."
     : "✅ Buyurtma #" + orderId + " qabul qilindi.\nBoshlang‘ich taxmin: " + estimate.toLocaleString("uz-UZ") + " so‘m.\nChegirma: " + calc.discountAmount.toLocaleString("uz-UZ") + " so‘m.\nChegirmadan keyingi taxmin: " + calc.finalPrice.toLocaleString("uz-UZ") + " so‘m.\nYakuniy narx va muddatni administrator tasdiqlaydi.";
-  await send(env, message.chat.id, reply, { reply_markup: mainMenu });
-  await notifyAdmin(env, orderId);
+  try { await send(env, message.chat.id, reply, { reply_markup: mainMenu }); } catch (_) { console.error("Could not send order acknowledgement"); }
+  try { await notifyAdmin(env, orderId); } catch (_) {
+    console.error("Could not notify admin about order #" + orderId);
+    try { await send(env, Number(env.ADMIN_ID), "Buyurtma #" + orderId + " saqlandi, lekin batafsil xabar yuborilmadi. /admin orqali tekshiring."); } catch (_) {}
+  }
   if (requiresReview && discounts.length) {
-    const claim = await env.DB.prepare("SELECT id FROM discount_claims WHERE discount_id=? AND user_id=? AND order_id=?").bind(discounts[0].id, message.from.id, orderId).first();
-    await send(env, Number(env.ADMIN_ID), "🪪 Chegirma/klub a’zoligi hujjatini tekshiring. Buyurtma #" + orderId + ", foydalanuvchi " + message.from.id, {
-      reply_markup: { inline_keyboard: [[
-        { text: "✅ Chegirmani tasdiqlash", callback_data: "discountreview:approve:" + claim.id },
-        { text: "❌ Rad etish", callback_data: "discountreview:reject:" + claim.id }
-      ]] }
-    });
+    try {
+      const claim = await env.DB.prepare("SELECT id FROM discount_claims WHERE discount_id=? AND user_id=? AND order_id=?").bind(discounts[0].id, message.from.id, orderId).first();
+      await send(env, Number(env.ADMIN_ID), "🪪 Chegirma/klub a’zoligi hujjatini tekshiring. Buyurtma #" + orderId + ", foydalanuvchi " + message.from.id, {
+        reply_markup: { inline_keyboard: [[
+          { text: "✅ Chegirmani tasdiqlash", callback_data: "discountreview:approve:" + claim.id },
+          { text: "❌ Rad etish", callback_data: "discountreview:reject:" + claim.id }
+        ]] }
+      });
+    } catch (_) { console.error("Could not notify admin about discount proof for order #" + orderId); }
     /* The proof attachment has already been copied by notifyAdmin. */
   }
   return orderId;
@@ -278,7 +294,7 @@ async function handleUploadedFile(env, m, currentSession) {
       await send(env, m.chat.id, "Chegirma tekshiruvi sessiyasi yaroqsiz. Buyurtmani qaytadan boshlang.");
       return true;
     }
-    await createOrder(env, m, currentSession.data.orderData, discounts, file);
+    await submitOrderSafely(env, m, currentSession.data.orderData, discounts, file);
     return true;
   }
   if (state === "receipt_upload") {
@@ -640,7 +656,7 @@ async function handleMessage(env, m) {
   }
   if (s.state === "discount") {
     if (["yo‘q", "yoq", "yo'q", "yo‘q.", "yoq.", "no", "-"].includes(text.toLowerCase())) {
-      await createOrder(env, m, s.data, []);
+      await submitOrderSafely(env, m, s.data, []);
       return;
     }
     const result = await findDiscountsForOrder(env, uid, s.data.service, text);
@@ -649,7 +665,7 @@ async function handleMessage(env, m) {
       await saveSession(env, uid, "discount_proof", { orderData: s.data, discountIds: result.discounts.map(d => Number(d.id)) });
       return send(env, chat, "Bu chegirma uchun a’zolik yoki boshqa dalil hujjati kerak. Rasm yoki faylni yuboring; administrator tekshiradi.");
     }
-    await createOrder(env, m, s.data, result.discounts);
+    await submitOrderSafely(env, m, s.data, result.discounts);
     return;
   }
   if (s.state === "attachment_upload") return send(env, chat, "PDF, rasm yoki boshqa fayl yuboring yoxud «✅ Fayllar tugadi» bosing.", { reply_markup: uploadMenu });
