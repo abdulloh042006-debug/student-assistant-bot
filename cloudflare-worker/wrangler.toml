@@ -2,6 +2,9 @@ name = "student-assistant-bot"
 main = "src/index.js"
 compatibility_date = "2026-10-26"
 
+[vars]
+ADMIN_ID = "7691931395"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "student-assistant-bot"
