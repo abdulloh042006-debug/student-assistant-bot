@@ -612,7 +612,13 @@ async function handleCallback(env, q) {
     const order = await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(orderId).first();
     if (!order) return send(env, Number(env.ADMIN_ID), "Buyurtma topilmadi.");
     if (order.final_price === null) return send(env, Number(env.ADMIN_ID), "Avval «💵 Narx/muddatni tasdiqlash» tugmasi orqali narxni tasdiqlang.");
-    await env.DB.prepare("UPDATE orders SET payment_status='To‘lov kutilmoqda' WHERE id=?").bind(orderId).run();
+    if (order.payment_status === "Chek tekshirilmoqda") {
+      return send(env, Number(env.ADMIN_ID), "Bu buyurtma uchun chek allaqachon tekshirilmoqda. Avval chekni tasdiqlang yoki rad eting.");
+    }
+    if (order.payment_status === "To‘lov tasdiqlandi") {
+      return send(env, Number(env.ADMIN_ID), "Bu buyurtma uchun to‘lov allaqachon tasdiqlangan.");
+    }
+    await env.DB.prepare("UPDATE orders SET payment_status='To‘lov kutilmoqda' WHERE id=? AND payment_status!='To‘lov tasdiqlandi' AND payment_status!='Chek tekshirilmoqda'").bind(orderId).run();
     order.payment_status = "To‘lov kutilmoqda";
     await send(env, order.user_id, await paymentInstructions(env, order), { reply_markup: { keyboard: [
       [{ text: "📤 To‘lov chekini yuborish" }], [{ text: "📦 Buyurtmalarim" }, { text: "💳 To‘lov haqida" }]
