@@ -99,3 +99,50 @@ test("failed Telegram update is marked failed so Telegram can retry it", async (
   assert.equal(response.status, 500);
   assert.ok(db.seen.some(item => item.sql.includes("SET status='failed'")));
 });
+
+test("/yordam and the Help button return the same complete guide", async () => {
+  const originalFetch = globalThis.fetch;
+  const sentMessages = [];
+  globalThis.fetch = async (_url, init) => {
+    sentMessages.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const inputs = ["/yordam", "/yordam@vazifa_bajaramanbot", "ℹ️ Yordam"];
+    for (let i = 0; i < inputs.length; i++) {
+      const db = mockDb();
+      const response = await worker.fetch(new Request("https://worker.example/telegram", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        body: JSON.stringify({
+          update_id: 200 + i,
+          message: { message_id: 10 + i, from: { id: 42 }, chat: { id: 42 }, text: inputs[i] }
+        })
+      }), {
+        BOT_TOKEN: "test-token",
+        ADMIN_ID: "123",
+        WEBHOOK_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        DB: db
+      });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).ok, true);
+    }
+
+    assert.equal(sentMessages.length, 3);
+    assert.equal(sentMessages[0].text, sentMessages[1].text);
+    assert.equal(sentMessages[1].text, sentMessages[2].text);
+    assert.match(sentMessages[0].text, /Buyurtma berish/);
+    assert.match(sentMessages[0].text, /To‘lov chekini yuborish/);
+    assert.match(sentMessages[0].text, /\/yordam/);
+    assert.deepEqual(sentMessages[0].reply_markup.keyboard[3][1], { text: "ℹ️ Yordam" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
