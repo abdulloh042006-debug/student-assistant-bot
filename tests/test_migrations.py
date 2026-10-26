@@ -30,8 +30,28 @@ class MigrationTests(unittest.TestCase):
         db.execute(
             "INSERT INTO payment_reviews(order_id,user_id,file_id,status) VALUES(1,101,'file-1','pending')"
         )
-        db.execute("INSERT OR IGNORE INTO webhook_updates(update_id) VALUES(123)")
-        db.execute("INSERT OR IGNORE INTO webhook_updates(update_id) VALUES(123)")
+        claim_sql = """
+            INSERT INTO webhook_updates(update_id,status,updated_at,attempt_count)
+            VALUES(?,'processing',CURRENT_TIMESTAMP,1)
+            ON CONFLICT(update_id) DO UPDATE SET
+              status='processing',
+              updated_at=CURRENT_TIMESTAMP,
+              attempt_count=webhook_updates.attempt_count+1
+            WHERE webhook_updates.status='failed'
+               OR (webhook_updates.status='processing'
+                   AND webhook_updates.updated_at < datetime('now','-2 minutes'))
+        """
+        self.assertEqual(db.execute(claim_sql, (123,)).rowcount, 1)
+        # An active claim cannot be taken by a concurrent duplicate.
+        self.assertEqual(db.execute(claim_sql, (123,)).rowcount, 0)
+        db.execute("UPDATE webhook_updates SET status='failed' WHERE update_id=123")
+        # Failed updates can be reclaimed, with the attempt count incremented.
+        self.assertEqual(db.execute(claim_sql, (123,)).rowcount, 1)
+        self.assertEqual(db.execute("SELECT status,attempt_count FROM webhook_updates WHERE update_id=123").fetchone(), ("processing", 2))
+        db.execute("UPDATE webhook_updates SET status='processed' WHERE update_id=123")
+        # Successfully processed updates remain deduplicated.
+        self.assertEqual(db.execute(claim_sql, (123,)).rowcount, 0)
+        self.assertEqual(db.execute("SELECT status FROM webhook_updates WHERE update_id=123").fetchone()[0], "processed")
         self.assertEqual(db.execute("SELECT COUNT(*) FROM webhook_updates").fetchone()[0], 1)
         self.assertEqual(db.execute("SELECT COUNT(*) FROM payment_reviews").fetchone()[0], 1)
         db.close()
