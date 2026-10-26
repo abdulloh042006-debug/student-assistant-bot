@@ -61,7 +61,9 @@ test("valid webhook requests are accepted and duplicate update IDs are ignored",
   });
   assert.equal(first.status, 200);
   assert.equal((await first.json()).ok, true);
-  assert.equal(firstDb.seen.length, 1);
+  assert.equal(firstDb.seen.length, 2);
+  assert.match(firstDb.seen[0].sql, /INSERT INTO webhook_updates/);
+  assert.match(firstDb.seen[1].sql, /SET status='processed'/);
 
   const duplicateDb = mockDb(0);
   const duplicate = await worker.fetch(new Request("https://worker.example/telegram", { method: "POST", headers, body }), {
@@ -69,4 +71,31 @@ test("valid webhook requests are accepted and duplicate update IDs are ignored",
   });
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
+});
+
+
+test("failed Telegram update is marked failed so Telegram can retry it", async () => {
+  const db = mockDb();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("simulated Telegram API failure"); };
+  const body = JSON.stringify({
+    update_id: 88,
+    message: { message_id: 3, from: { id: 42 }, chat: { id: 42 }, text: "/start" }
+  });
+  const response = await worker.fetch(new Request("https://worker.example/telegram", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    body
+  }), {
+    BOT_TOKEN: "test-token",
+    ADMIN_ID: "123",
+    WEBHOOK_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    DB: db
+  });
+  globalThis.fetch = originalFetch;
+  assert.equal(response.status, 500);
+  assert.ok(db.seen.some(item => item.sql.includes("SET status='failed'")));
 });
