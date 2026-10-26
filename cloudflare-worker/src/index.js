@@ -145,7 +145,7 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
   const orderId = Number(insert.meta.last_row_id);
   for (const discount of discounts) {
     const needsReview = Number(discount.requires_review) === 1;
-    await env.DB.prepare("INSERT INTO discount_claims(discount_id,user_id,order_id,status,proof_file_id) VALUES(?,?,?,?,?)")
+    await env.DB.prepare("INSERT INTO discount_claims(discount_id,user_id,order_id,status,proof_file_id) VALUES(?,?,?,?,?) ON CONFLICT(discount_id,user_id) DO UPDATE SET order_id=excluded.order_id,status=excluded.status,proof_file_id=excluded.proof_file_id,created_at=CURRENT_TIMESTAMP WHERE discount_claims.status='rejected'")
       .bind(discount.id, message.from.id, orderId, needsReview ? "pending" : "approved", needsReview && proofFile ? proofFile.file_id : null).run();
     if (!needsReview) {
       await env.DB.prepare("UPDATE discounts SET uses_count=uses_count+1 WHERE id=?").bind(discount.id).run();
@@ -184,7 +184,9 @@ async function findDiscountsForOrder(env, uid, service, rawNames) {
     const discount = await env.DB.prepare("SELECT * FROM discounts WHERE lower(name)=lower(?) ORDER BY id DESC LIMIT 1").bind(name).first();
     if (!discount) return { discounts: [], error: "Chegirma topilmadi: " + name + ". Nomini /discounts ro‘yxatidan tekshiring yoki yo‘q deb yozing." };
     const existing = await env.DB.prepare("SELECT status FROM discount_claims WHERE discount_id=? AND user_id=? AND status IN ('pending','approved')").bind(discount.id, uid).first();
-    const reason = discountEligibility(discount, service, new Date(), Boolean(existing));
+    const pending = await env.DB.prepare("SELECT COUNT(*) AS n FROM discount_claims WHERE discount_id=? AND status='pending'").bind(discount.id).first();
+    const availability = Object.assign({}, discount, { uses_count: Number(discount.uses_count) + Number(pending ? pending.n : 0) });
+    const reason = discountEligibility(availability, service, new Date(), Boolean(existing));
     if (reason) return { discounts: [], error: name + ": " + reason };
     discounts.push(discount);
   }
