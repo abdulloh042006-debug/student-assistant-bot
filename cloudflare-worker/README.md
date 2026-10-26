@@ -105,6 +105,12 @@ The currently running Python bot uses long polling. Stop that process before ena
 
 User-entered discount names must match a name shown by `/discounts`. The service restriction must match the service name selected in the order form. A proof-required discount is reserved against its use limit while awaiting administrator review; rejecting it releases that reserved use.
 
+## Telegram bot profile setup
+
+After the Worker is working, run `powershell -ExecutionPolicy Bypass -File .\\cloudflare-worker\\scripts\\configure-bot-profile.ps1` from the repository root to set the Telegram bot's short description, full description, and `/start` and `/cancel` commands. The script prompts for the token securely and does not store it in the repository.
+
+To also update the bot's profile picture, download the prepared Student Assistant logo as a JPG and enter its local file path when prompted. Press Enter at the photo prompt to skip the picture update. This step changes Telegram bot profile metadata only; it does not require a Worker redeployment.
+
 ## Deployment status
 
 Code lives on the separate branch `feature/cloudflare-worker-migration` and is not merged into `main`. CI checks syntax, pricing/discount rules, and SQL migration compatibility. Do not point the production bot at the Worker until the CI run is green, SQL migrations are applied to D1, secrets are set, and a private test order plus receipt review has passed.
