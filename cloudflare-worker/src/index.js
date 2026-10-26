@@ -126,7 +126,7 @@ async function notifyAdmin(env, orderId) {
 async function latestOrder(env, uid, unpaidOnly = false) {
   const sql = unpaidOnly
     ? "SELECT id,service,status,payment_status FROM orders WHERE user_id=? AND payment_status!='To‘lov tasdiqlandi' ORDER BY id DESC LIMIT 1"
-    : "SELECT id,service,status,payment_status FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 1";
+    : "SELECT id,service,status,payment_status FROM orders WHERE user_id=? AND status NOT IN ('Bajarildi','Rad etildi') ORDER BY id DESC LIMIT 1";
   return env.DB.prepare(sql).bind(uid).first();
 }
 async function submitOrderSafely(env, message, data, discounts = [], proofFile = null) {
@@ -325,7 +325,11 @@ async function handleUploadedFile(env, m, currentSession) {
     await send(env, m.chat.id, "Fayl buyurtma #" + orderId + " ga biriktirildi. Yana fayl yuborishingiz yoki «✅ Fayllar tugadi» tugmasini bosishingiz mumkin.", { reply_markup: uploadMenu });
     return true;
   }
-  if (state === "discount_name" || state.startsWith("discount_") || state.startsWith("admin_")) {
+  if (["service", "description", "quantity", "deadline", "budget", "priority", "discount"].includes(state)) {
+    await send(env, m.chat.id, "Avval buyurtma savollarini tugating. Keyin «📎 Fayl yuborish» orqali faylni biriktiring.");
+    return true;
+  }
+  if (state.startsWith("discount_") || state.startsWith("admin_")) {
     await send(env, m.chat.id, "Avval joriy matnli qadamni yakunlang. Fayl hozir qabul qilinmadi.");
     return true;
   }
@@ -362,7 +366,7 @@ async function handleAdminText(env, m, text, s) {
     for (const d of rows.results) {
       const details = "#" + d.id + " " + d.name + " — " + (d.kind === "percent" ? d.amount + "%" : Number(d.amount).toLocaleString("uz-UZ") + " so‘m") +
         "\nHolat: " + (d.active ? "faol" : "nofaol") +
-        "\nIshlatilgan: " + d.uses_count + (d.max_uses === null ? "/cheksiz" : "/" + d.max_uses) +
+        "\nBand/ishlatilgan: " + d.uses_count + (d.max_uses === null ? "/cheksiz" : "/" + d.max_uses) +
         "\nXizmat: " + (d.service || "barchasi") +
         "\nBoshlanish: " + (d.starts_at || "darhol") +
         "\nTugash: " + (d.expires_at || "cheksiz") +
@@ -552,7 +556,7 @@ async function handleCallback(env, q) {
     await env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=?,final_price=NULL WHERE id=?")
       .bind(calc.discountAmount, JSON.stringify([Number(claim.discount_id)]), claim.order_id).run();
     await send(env, claim.order_user, "✅ Hujjatli chegirma buyurtma #" + claim.order_id + " uchun tasdiqlandi. Chegirma: " + calc.discountAmount.toLocaleString("uz-UZ") + " so‘m. Chegirmadan keyingi taxmin: " + calc.finalPrice.toLocaleString("uz-UZ") + " so‘m. Yakuniy narxni administrator tasdiqlaydi.");
-    return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " tasdiqlandi.");
+    return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " tasdiqlandi. Buyurtma #" + claim.order_id + " uchun tasdiqlangan narx olib tashlandi — chegirmali taxminni tekshirib, «💵 Narx/muddatni tasdiqlash» tugmasi orqali yakuniy narxni qayta tasdiqlang.");
   }
 }
 async function handleMessage(env, m) {
