@@ -129,6 +129,9 @@ async function latestOrder(env, uid, unpaidOnly = false) {
     : "SELECT id,service,status,payment_status FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 1";
   return env.DB.prepare(sql).bind(uid).first();
 }
+async function latestReceiptOrder(env, uid) {
+  return env.DB.prepare("SELECT id,service,status,payment_status FROM orders WHERE user_id=? AND payment_status IN ('To‘lov kutilmoqda','To‘lov rad etildi') ORDER BY id DESC LIMIT 1").bind(uid).first();
+}
 async function createOrder(env, message, data, discounts = [], proofFile = null) {
   const estimate = estimatePrice(data.service, data.quantity);
   const requiresReview = discounts.some(d => Number(d.requires_review) === 1);
@@ -312,7 +315,7 @@ async function handleUploadedFile(env, m, currentSession) {
   }
   const caption = String(m.caption || "");
   if (/(chek|to.?lov|receipt)/i.test(caption)) {
-    const order = await latestOrder(env, m.from.id, true);
+    const order = await latestReceiptOrder(env, m.from.id);
     if (order) {
       await saveSession(env, m.from.id, "receipt_upload", { orderId: order.id });
       return handleUploadedFile(env, m, await session(env, m.from.id));
@@ -579,8 +582,8 @@ async function handleMessage(env, m) {
     return send(env, chat, "Buyurtma #" + order.id + " uchun PDF, rasm, Word, audio yoki video faylini yuboring. Tugatgach «✅ Fayllar tugadi» bosing.", { reply_markup: uploadMenu });
   }
   if (text === "📤 To‘lov chekini yuborish") {
-    const order = await latestOrder(env, uid, true);
-    if (!order) return send(env, chat, "Chek yuborish uchun to‘lanishi kutilayotgan buyurtma topilmadi. Avval administrator yakuniy narxni tasdiqlashi kerak.", { reply_markup: mainMenu });
+    const order = await latestReceiptOrder(env, uid);
+    if (!order) return send(env, chat, "Chek faqat administrator to‘lov so‘rovini yuborgach qabul qilinadi. Buyurtmalar holatini «📦 Buyurtmalarim» orqali tekshiring.", { reply_markup: mainMenu });
     return startReceiptUpload(env, chat, uid, order);
   }
   if (text === "✅ Fayllar tugadi") {
