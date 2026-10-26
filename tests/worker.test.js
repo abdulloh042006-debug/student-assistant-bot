@@ -54,10 +54,10 @@ test("webhook rejects missing configuration and invalid secret", async () => {
 
 test("valid webhook requests are accepted and duplicate update IDs are ignored", async () => {
   const body = JSON.stringify({ update_id: 77 });
-  const headers = { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "test-secret" };
+  const headers = { "content-type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" };
   const firstDb = mockDb(1);
   const first = await worker.fetch(new Request("https://worker.example/telegram", { method: "POST", headers, body }), {
-    BOT_TOKEN: "test-token", ADMIN_ID: "123", WEBHOOK_SECRET: "test-secret", DB: firstDb
+    BOT_TOKEN: "test-token", ADMIN_ID: "123", WEBHOOK_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", DB: firstDb
   });
   assert.equal(first.status, 200);
   assert.equal((await first.json()).ok, true);
