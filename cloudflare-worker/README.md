@@ -1,14 +1,29 @@
 # Cloudflare Worker version
 
-This is a separate webhook-based migration; it does not replace the existing Python bot.
+This is a separate webhook-based migration. It does not replace or modify the existing Python bot.
 
-## Setup
-1. Create a Cloudflare D1 database named `student-assistant-bot-db`.
-2. Execute `schema.sql` against that database.
-3. Put the database ID in `wrangler.toml`.
-4. Deploy this directory as a **Worker**, not as a static Pages site. Bind the D1 database as `DB`.
-5. Add Worker secrets `BOT_TOKEN` and `ADMIN_ID`; optionally add `PAYMENT_TEXT`, `PAYMENT_CARD`, `PAYMENT_OWNER`.
-6. After deployment, configure Telegram webhook: `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<WORKER_HOST>/telegram`.
-7. Test privately before taking real orders.
+## Current status
 
-Never commit real tokens or payment details. The Python bot remains unchanged. This is an initial migration and is not production-ready until order attachments, receipt review, and admin-managed discount controls are implemented and tested.
+This is still an implementation branch, not production-ready. Do not point the live Telegram bot at it yet. The initial order flow is present, but receipt review, attachments, and discount administration are still being completed and tested.
+
+## D1 setup
+
+1. Create/use the D1 database named `student-assistant-bot`.
+2. Execute `schema.sql` only if the base tables have not already been created.
+3. If the base schema was already applied, execute `migrations/0002_files_and_payments.sql` once to add attachment and receipt-review tables.
+4. Keep the database binding in `wrangler.toml` set to `DB`.
+
+## Worker configuration
+
+Add these as Worker secrets/variables in Cloudflare; never commit their values:
+
+- `BOT_TOKEN` — Telegram bot token (secret).
+- `ADMIN_ID` — numeric Telegram administrator ID.
+- `WEBHOOK_SECRET` — optional secret token used to validate Telegram webhook requests. If set, Telegram must send the matching `secret_token` when configuring the webhook.
+- `PAYMENT_TEXT` — optional payment instructions shown to users.
+
+## Webhook
+
+After code is fully implemented and tested, deploy the Worker and configure Telegram's webhook to `https://<WORKER_HOST>/telegram`. If `WEBHOOK_SECRET` is set, pass the same value as Telegram's `secret_token` when calling `setWebhook`.
+
+Do not configure the live webhook until the migration is complete and privately tested. The Python bot remains unchanged.
