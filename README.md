@@ -1,28 +1,33 @@
 # Student Assistant Bot
 
-Telegram bot for collecting student task requests. The administrator manually reviews, fulfills, and updates each order.
+![Student Assistant logo](assets/student-assistant-logo.svg)
+
+Telegram bot for collecting student task requests. The administrator manually reviews and fulfills orders.
 
 ## Features
 
-- Uzbek-language menu and order flow
-- Presentation price estimate based on slide count
-- Request description, deadline, and attachments (documents, photos, audio, voice messages)
-- SQLite order history
-- Admin notifications and status controls
-- Manual payment confirmation; no payment gateway is integrated
+- Uzbek-language order flow and order history
+- Presentation price estimate
+- Documents, photos, audio, video, and voice attachments
+- SQLite storage
+- Admin order-status controls
+- Card-to-card payment instructions
+- Student submits a payment receipt; administrator manually approves or rejects it
+- No payment gateway or automatic payment verification
+- Navy-and-gold SVG logo
 
-## Price estimate
+## Price estimates
 
 - Presentation, 1–8 slides: 5,000 UZS
 - Presentation, 9–20 slides: 10,000 UZS
 - Presentation, 21+ slides: from 15,000 UZS
 - Other electronic work: from 10,000 UZS
 
-The estimate is not a final quote. The administrator confirms the final price and deadline.
+The administrator must confirm the final amount before requesting payment.
 
-## Run locally
+## Setup
 
-Requires Python 3.10 or newer.
+Requires Python 3.10+.
 
 ### Windows PowerShell
 
@@ -33,13 +38,14 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set:
-- `BOT_TOKEN`: token from BotFather
-- `ADMIN_ID`: your numeric Telegram user ID
+Edit `.env`:
+- `BOT_TOKEN`: Telegram token from BotFather
+- `ADMIN_ID`: administrator's numeric Telegram user ID
+- `PAYMENT_CARD`: card number to receive transfers
+- `PAYMENT_OWNER`: cardholder name (optional)
 - `DB_PATH`: optional SQLite file path
-- `PAYMENT_TEXT`: optional payment instructions shown to users
 
-Then run:
+Run:
 
 ```powershell
 python bot.py
@@ -55,18 +61,21 @@ cp .env.example .env
 python bot.py
 ```
 
-## Admin workflow
+## Payment flow
 
-1. Receive a new order and its attachments in Telegram.
-2. Use the inline buttons to update its status.
-3. Contact the student to confirm the final price, deadline, and payment.
-4. Send completed deliverables to the student manually.
+1. Administrator reviews the order and confirms the amount.
+2. Administrator presses **To‘lov so‘rash**.
+3. The bot sends the configured card number and amount to the student.
+4. Student transfers money card-to-card and sends a receipt photo/file.
+5. Administrator checks the receipt and presses **To‘lovni tasdiqlash** or **Rad etish**.
+6. Payment is marked confirmed only after the administrator approves it.
 
-The `/admin` command displays basic order counts.
+The bot does not connect to a bank and cannot verify transfers automatically. Never commit your real `.env` file or bot token.
 
-## Important notes
+## Emoji
 
-- Never commit your real `.env` file or bot token.
-- This MVP uses SQLite and assumes one bot process.
-- Hosting providers may sleep or stop free services; verify current free-tier limits before deployment.
-- Test with a private test bot and a few sample orders before accepting real requests.
+The interface uses standard Unicode emoji, which are free to use. Telegram Premium custom emoji require specific custom-emoji IDs, so this MVP does not depend on them.
+
+## Hosting notes
+
+The bot uses long polling and SQLite. Choose a host that can keep a Python process running and has persistent storage for SQLite. Free hosting limits can change; test the bot before accepting real orders.
