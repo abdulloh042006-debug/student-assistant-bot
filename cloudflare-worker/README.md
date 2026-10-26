@@ -93,6 +93,14 @@ For Windows, run `powershell -ExecutionPolicy Bypass -File .\\cloudflare-worker\
 
 The currently running Python bot uses long polling. Stop that process before enabling the webhook for the same bot token; Telegram does not deliver updates using long polling while an outgoing webhook is set. Keep the Python version and its database as a rollback copy, but do not run both delivery modes simultaneously.
 
+## User help
+
+- `/start` — open the bot and show the main menu
+- `/yordam` — show the full Uzbek user guide; the `ℹ️ Yordam` button returns the same text
+- `/cancel` — cancel the current conversation step
+
+The `configure-bot-profile.ps1` script also registers these commands in Telegram's command menu. Re-run it once to refresh the visible command list.
+
 ## Administrator commands
 
 - `/admin` — counts for orders and pending receipts
