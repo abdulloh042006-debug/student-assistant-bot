@@ -373,7 +373,8 @@ async function handleUploadedFile(env, m, currentSession) {
         review.status === "approved" ? "Bu chek allaqachon tasdiqlangan." : "Bu chek allaqachon rad etilgan.",
         { reply_markup: mainMenu });
     }
-    await clearSession(env, m.from.id);
+    // Keep the session until all notifications are sent. If Telegram retries after a notification
+    // failure, the saved source-message key lets this block resume without another database entry.
     await send(env, m.chat.id, "Chek buyurtma #" + orderId + " uchun qabul qilindi. Administrator tekshirgach xabar beriladi.", { reply_markup: mainMenu });
     await copyUserMessageToAdmin(env, m, "💳 To‘lov cheki — buyurtma #" + orderId);
     await send(env, Number(env.ADMIN_ID), "💳 To‘lov cheki: buyurtma #" + orderId + "\nFoydalanuvchi ID: " + m.from.id, {
@@ -382,6 +383,7 @@ async function handleUploadedFile(env, m, currentSession) {
         { text: "❌ Rad etish", callback_data: "receipt:reject:" + review.id }
       ]] }
     });
+    await clearSession(env, m.from.id);
     return true;
   }
   if (state === "order_attachments") {
