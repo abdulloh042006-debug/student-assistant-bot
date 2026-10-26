@@ -39,6 +39,35 @@ const orderAttachmentsMenu = {
   resize_keyboard: true
 };
 const priceText = "💰 Taxminiy narxlar\n\n• Prezentatsiya, 1–8 slayd: 5 000 so‘m\n• Prezentatsiya, 9–20 slayd: 10 000 so‘m\n• Prezentatsiya, 21+ slayd: 15 000 so‘mdan\n• Referat yoki boshqa elektron ishlar: 10 000 so‘mdan\n\nYakuniy narx va muddatni administrator tasdiqlaydi.";
+const helpText = [
+  "ℹ️ YORDAM — BOTDAN FOYDALANISH",
+  "",
+  "1. 📝 Buyurtma berish",
+  "Xizmatni tanlang va bot bergan savollarga ketma-ket javob bering. Ma’lumotlarni aniq kiriting. Buyurtma jarayonida kerakli fayllarni yuboring yoki «⏭ Faylsiz davom etish» tugmasini bosing.",
+  "",
+  "2. 📎 Fayl yuborish",
+  "Avval yaratilgan buyurtmaga qo‘shimcha fayl biriktiradi. Buyurtmangiz bo‘lmasa, avval «📝 Buyurtma berish»ni tanlang.",
+  "",
+  "3. 📦 Buyurtmalarim",
+  "Buyurtmalaringiz holati, narxi va muddatini ko‘rsatadi.",
+  "",
+  "4. 💰 Narxlar",
+  "Xizmatlarning taxminiy narxlarini ko‘rsatadi. Yakuniy narx va muddatni administrator tasdiqlaydi.",
+  "",
+  "5. 💳 To‘lov haqida",
+  "Administrator buyurtma narxini tasdiqlab, to‘lov so‘rovini yuborganidan keyin to‘lov ma’lumotlari ko‘rsatiladi. To‘lov so‘rovi kelmaguncha pul yubormang.",
+  "",
+  "6. 📤 To‘lov chekini yuborish",
+  "Faqat bot to‘lov so‘rovini yuborganidan keyin chekni rasm yoki fayl ko‘rinishida yuboring.",
+  "",
+  "7. ✅ Fayllar tugadi / ⏭ Faylsiz davom etish",
+  "Fayllarni yuborib bo‘lgach «✅ Fayllar tugadi»ni bosing. Fayl qo‘shmasdan davom etmoqchi bo‘lsangiz, tegishli jarayonda «⏭ Faylsiz davom etish»ni tanlang.",
+  "",
+  "8. ❌ Bekor qilish",
+  "Joriy amalni bekor qiladi. Buning uchun «❌ Bekor qilish» tugmasi yoki /cancel buyrug‘idan foydalaning.",
+  "",
+  "Buyruqlar: /start — botni ishga tushirish; /yordam — ushbu yo‘riqnoma; /cancel — joriy amalni bekor qilish."
+].join("\n");
 
 async function tg(env, method, payload) {
   const response = await fetch("https://api.telegram.org/bot" + env.BOT_TOKEN + "/" + method, {
@@ -687,6 +716,12 @@ async function handleMessage(env, m) {
   if (!m.from || !m.chat) return;
   const uid = m.from.id, chat = m.chat.id;
   const text = String(m.text || "").trim();
+
+  // Handle help before conversation/admin states, so it works at any point.
+  if (text === "ℹ️ Yordam" || /^\/yordam(?:@[A-Za-z0-9_]+)?$/i.test(text)) {
+    return send(env, chat, helpText, { reply_markup: mainMenu });
+  }
+
   let s = await session(env, uid);
 
   if (text === "/start") {
@@ -711,7 +746,7 @@ async function handleMessage(env, m) {
     const fullOrder = await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(order.id).first();
     return send(env, chat, await paymentInstructions(env, fullOrder), { reply_markup: mainMenu });
   }
-  if (text === "ℹ️ Yordam") return send(env, chat, "📝 «Buyurtma berish» orqali topshiriqni kiriting. Administrator yakuniy narx va muddatni tasdiqlaydi. To‘lov cheki qo‘lda tekshiriladi. Fayllar uchun «📎 Fayl yuborish», chek uchun «📤 To‘lov chekini yuborish» tugmalaridan foydalaning.", { reply_markup: mainMenu });
+
   if (text === "📦 Buyurtmalarim") {
     const rows = await env.DB.prepare("SELECT id,service,status,payment_status,estimate,discount_amount,final_price,deadline,confirmed_deadline FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 10").bind(uid).all();
     if (!rows.results.length) return send(env, chat, "Hozircha buyurtmalaringiz yo‘q.", { reply_markup: mainMenu });
