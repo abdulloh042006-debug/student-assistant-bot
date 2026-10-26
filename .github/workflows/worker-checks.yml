@@ -14,11 +14,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
       - name: Check Worker and helper syntax
-        run: |
-          node --check cloudflare-worker/src/index.js
-          node --check cloudflare-worker/src/domain.js
+        run: npm run check
       - name: Run domain tests
-        run: node --test tests/domain.test.js
+        run: npm test
       - name: Validate SQLite migrations preserve data
-        run: python tests/test_migrations.py
+        run: npm run test:migrations
+      - name: Build Worker without deploying
+        run: npm run deploy:worker -- --dry-run
