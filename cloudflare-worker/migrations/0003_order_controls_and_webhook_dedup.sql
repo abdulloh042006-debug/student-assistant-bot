@@ -11,7 +11,9 @@ ALTER TABLE order_attachments ADD COLUMN source_message_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS webhook_updates (
   update_id INTEGER PRIMARY KEY,
-  processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  status TEXT NOT NULL DEFAULT 'processing' CHECK(status IN ('processing','processed','failed')),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  attempt_count INTEGER NOT NULL DEFAULT 1 CHECK(attempt_count >= 1)
 );
 
 INSERT OR IGNORE INTO settings(key, value) VALUES ('allow_discount_stacking', '0');
