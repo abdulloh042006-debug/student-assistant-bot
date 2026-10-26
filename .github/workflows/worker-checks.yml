@@ -1,0 +1,29 @@
+name: Cloudflare Worker checks
+
+on:
+  push:
+    branches: [feature/cloudflare-worker-migration]
+  pull_request:
+    branches: [main]
+
+jobs:
+  worker-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
+      - name: Check Worker and helper syntax
+        run: npm run check
+      - name: Run domain tests
+        run: npm test
+      - name: Validate SQLite migrations preserve data
+        run: npm run test:migrations
+      - name: Build Worker without deploying
+        run: npm run deploy:worker -- --dry-run

@@ -1,0 +1,15 @@
+{
+  "name": "student-assistant-bot-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:migrations": "python tests/test_migrations.py",
+    "check": "node --check cloudflare-worker/src/index.js && node --check cloudflare-worker/src/domain.js",
+    "dev:worker": "wrangler dev --config cloudflare-worker/wrangler.toml",
+    "deploy:worker": "wrangler deploy --config cloudflare-worker/wrangler.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
