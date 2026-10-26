@@ -783,10 +783,8 @@ export default {
       return responseJson({ ok: true });
     } catch (error) {
       console.error("Telegram update processing failed", error && error.message ? error.message : "unknown");
-      // Release the deduplication key when processing fails so Telegram can retry the update.
-      if (update && Number.isSafeInteger(update.update_id)) {
-        try { await env.DB.prepare("DELETE FROM webhook_updates WHERE update_id=?").bind(update.update_id).run(); } catch (_) {}
-      }
+      // Keep the deduplication key: a handler may have already written data or sent messages
+      // before a later operation failed, so automatic reprocessing could duplicate side effects.
       return responseJson({ ok: false, error: "Update handling failed" }, 500);
     }
   }
