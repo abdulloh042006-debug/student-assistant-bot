@@ -4,5 +4,5 @@ compatibility_date = "2026-10-26"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "student-assistant-bot-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_name = "student-assistant-bot"
+database_id = "46e9b02d-58c7-403b-9a6c-638e2d80f004"
