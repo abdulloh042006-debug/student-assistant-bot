@@ -23,6 +23,8 @@ test("dates reject malformed calendar dates and normalize full-day expiry", () =
   assert.equal(normalizeDate("2026-02-31"), undefined);
   assert.equal(normalizeDate("26-10-2026"), undefined);
   assert.equal(normalizeDate("yo‘q"), null);
+  assert.equal(normalizeDate("yo'q"), null);
+  assert.equal(normalizeDate(" 2026-10-26 "), "2026-10-26T00:00:00.000Z");
 });
 
 test("discount eligibility honors active state, dates, max use, service, and repeat use", () => {
