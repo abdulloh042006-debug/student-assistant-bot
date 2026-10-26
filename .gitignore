@@ -5,3 +5,7 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 *.db
+
+# Cloudflare Worker local secrets
+.dev.vars
+.dev.vars.*
