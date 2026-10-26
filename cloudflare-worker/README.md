@@ -44,18 +44,21 @@ Optional secrets:
 - `PAYMENT_OWNER`: cardholder name.
 - `PAYMENT_TEXT`: additional payment instructions.
 
-Set secrets in Cloudflare Dashboard → **Workers & Pages → student-assistant-bot → Settings → Variables and Secrets → Add → Secret**, or with Wrangler (from the repository root):
+### Prepare secrets safely (do not deploy yet)
 
-```powershell
-npx wrangler secret put BOT_TOKEN --config cloudflare-worker/wrangler.toml
-npx wrangler secret put ADMIN_ID --config cloudflare-worker/wrangler.toml
-npx wrangler secret put WEBHOOK_SECRET --config cloudflare-worker/wrangler.toml
-npx wrangler secret put PAYMENT_CARD --config cloudflare-worker/wrangler.toml
-npx wrangler secret put PAYMENT_OWNER --config cloudflare-worker/wrangler.toml
-npx wrangler secret put PAYMENT_TEXT --config cloudflare-worker/wrangler.toml
+For the first deployment, create a local file named `.env.production` in the repository root. Keep it out of GitHub; the root `.gitignore` excludes `.env.*` files.
+
+Required entries:
+
+```dotenv
+BOT_TOKEN=your_real_botfather_token
+ADMIN_ID=your_numeric_telegram_user_id
+WEBHOOK_SECRET=replace_with_a_random_secret_32_to_256_chars
 ```
 
-Skip the optional payment secrets if you prefer the administrator to share payment details manually. Wrangler secret commands may publish a new Worker version, so do not set the Telegram webhook until all settings and database migrations are complete.
+The `WEBHOOK_SECRET` must contain only letters, numbers, underscores, and hyphens. Generate a fresh value locally and use the same value when configuring Telegram's webhook. Do not use the placeholder values above. Optional entries are `PAYMENT_CARD`, `PAYMENT_OWNER`, and `PAYMENT_TEXT`; omit them if the administrator will send payment details manually.
+
+Do not paste real values into GitHub, chat, source files, or `wrangler.toml`.
 
 ## Build and tests
 
@@ -69,14 +72,18 @@ npm run test:migrations
 npm run deploy:worker -- --dry-run
 ```
 
-The dry run bundles the Worker without deploying it. To deploy, authenticate with Cloudflare and run:
+The dry run bundles the Worker without deploying it. The latest CI run performs these syntax, domain, migration, and dry-run checks automatically.
+
+## First deployment (run only when you choose to deploy)
+
+From the repository root, after the D1 migrations are complete and `.env.production` contains real values, run:
 
 ```powershell
 npx wrangler login
-npm run deploy:worker
+npx wrangler deploy --config cloudflare-worker/wrangler.toml --secrets-file .env.production
 ```
 
-The Worker is configured in `wrangler.toml` and binds the existing D1 database as `DB`. The deployed URL will be shown by Wrangler.
+This deploys the Worker code and the listed secrets in one operation. It also shows the resulting Worker URL. Do not run individual `wrangler secret put` commands beforehand: those commands create and deploy a Worker version immediately. Do not configure the Telegram webhook until the Worker is deployed, secret configuration is verified, and a private test order/receipt review succeeds.
 
 ## Enable Telegram webhook last
 
