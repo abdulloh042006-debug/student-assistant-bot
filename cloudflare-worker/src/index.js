@@ -30,6 +30,14 @@ const uploadMenu = {
   ],
   resize_keyboard: true
 };
+const orderAttachmentsMenu = {
+  keyboard: [
+    [{ text: "✅ Fayllar tugadi" }],
+    [{ text: "⏭ Faylsiz davom etish" }],
+    [{ text: "❌ Bekor qilish" }]
+  ],
+  resize_keyboard: true
+};
 const priceText = "💰 Taxminiy narxlar\n\n• Prezentatsiya, 1–8 slayd: 5 000 so‘m\n• Prezentatsiya, 9–20 slayd: 10 000 so‘m\n• Prezentatsiya, 21+ slayd: 15 000 so‘mdan\n• Referat yoki boshqa elektron ishlar: 10 000 so‘mdan\n\nYakuniy narx va muddatni administrator tasdiqlaydi.";
 
 async function tg(env, method, payload) {
@@ -137,6 +145,15 @@ async function latestOrder(env, uid, unpaidOnly = false) {
     : "SELECT id,service,status,payment_status FROM orders WHERE user_id=? AND status NOT IN ('Bajarildi','Rad etildi') ORDER BY id DESC LIMIT 1";
   return env.DB.prepare(sql).bind(uid).first();
 }
+async function beginOrderAttachments(env, chatId, uid, orderData, discounts = []) {
+  await saveSession(env, uid, "order_attachments", {
+    orderData,
+    discountIds: discounts.map(d => Number(d.id)),
+    proofFile: null,
+    attachments: []
+  });
+  return send(env, chatId, "Buyurtma ma’lumotlari tayyor. Endi topshiriq uchun PDF, rasm, Word, audio yoki video fayllarini yuboring. Fayl bo‘lmasa «⏭ Faylsiz davom etish» tugmasini bosing.", { reply_markup: orderAttachmentsMenu });
+}
 async function submitOrderSafely(env, message, data, discounts = [], proofFile = null) {
   try {
     await createOrder(env, message, data, discounts, proofFile);
@@ -187,7 +204,11 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
     }
     if (proofFile) {
       await env.DB.prepare("INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','pending',?,?,?)")
-        .bind(orderId, message.from.id, proofFile.file_id, proofFile.file_unique_id || null, proofFile.file_name || "", proofFile.mime_type || "", proofFile.media_type, message.chat.id, message.message_id).run();
+        .bind(orderId, message.from.id, proofFile.file_id, proofFile.file_unique_id || null, proofFile.file_name || "", proofFile.mime_type || "", proofFile.media_type, proofFile.source_chat_id || message.chat.id, proofFile.source_message_id || message.message_id).run();
+    }
+    for (const attachment of (data.attachments || [])) {
+      await env.DB.prepare("INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','not_required',?,?,?)")
+        .bind(orderId, message.from.id, attachment.file_id, attachment.file_unique_id || null, attachment.file_name || "", attachment.mime_type || "", attachment.media_type || "document", attachment.source_chat_id, attachment.source_message_id).run();
     }
   } catch (error) {
     if (orderId !== null) {
@@ -306,7 +327,14 @@ async function handleUploadedFile(env, m, currentSession) {
       await send(env, m.chat.id, "Chegirma tekshiruvi sessiyasi yaroqsiz. Buyurtmani qaytadan boshlang.");
       return true;
     }
-    await submitOrderSafely(env, m, currentSession.data.orderData, discounts, file);
+    const proofFile = Object.assign({}, file, { source_chat_id: m.chat.id, source_message_id: m.message_id });
+    await saveSession(env, m.from.id, "order_attachments", {
+      orderData: currentSession.data.orderData,
+      discountIds: names.map(Number),
+      proofFile,
+      attachments: []
+    });
+    await send(env, m.chat.id, "Chegirma uchun dalil hujjati qabul qilindi. Endi topshiriqqa tegishli fayllarni yuboring yoki «⏭ Faylsiz davom etish» tugmasini bosing.", { reply_markup: orderAttachmentsMenu });
     return true;
   }
   if (state === "receipt_upload") {
@@ -326,6 +354,26 @@ async function handleUploadedFile(env, m, currentSession) {
         { text: "❌ Rad etish", callback_data: "receipt:reject:" + review.meta.last_row_id }
       ]] }
     });
+    return true;
+  }
+  if (state === "order_attachments") {
+    const attachments = currentSession.data.attachments || [];
+    if (attachments.length >= 10) {
+      await send(env, m.chat.id, "Bir buyurtmaga ko‘pi bilan 10 ta fayl biriktirish mumkin. «✅ Fayllar tugadi» tugmasini bosing.");
+      return true;
+    }
+    attachments.push({
+      file_id: file.file_id,
+      file_unique_id: file.file_unique_id || null,
+      file_name: file.file_name || "",
+      mime_type: file.mime_type || "",
+      media_type: file.media_type,
+      source_chat_id: m.chat.id,
+      source_message_id: m.message_id
+    });
+    const updated = Object.assign({}, currentSession.data, { attachments });
+    await saveSession(env, m.from.id, "order_attachments", updated);
+    await send(env, m.chat.id, "Ilova saqlandi (" + attachments.length + "/10). Yana fayl yuboring yoki «✅ Fayllar tugadi» bosing.", { reply_markup: orderAttachmentsMenu });
     return true;
   }
   if (state === "attachment_upload") {
@@ -627,7 +675,19 @@ async function handleMessage(env, m) {
     if (!order) return send(env, chat, "Chek faqat administrator to‘lov so‘rovini yuborgach qabul qilinadi. Buyurtmalar holatini «📦 Buyurtmalarim» orqali tekshiring.", { reply_markup: mainMenu });
     return startReceiptUpload(env, chat, uid, order);
   }
-  if (text === "✅ Fayllar tugadi") {
+  if (text === "✅ Fayllar tugadi" || text === "⏭ Faylsiz davom etish") {
+    if (s.state === "order_attachments") {
+      const discounts = [];
+      for (const id of (s.data.discountIds || [])) {
+        const discount = await env.DB.prepare("SELECT * FROM discounts WHERE id=?").bind(id).first();
+        if (!discount) return send(env, chat, "Tanlangan chegirma topilmadi. /cancel qilib buyurtmani qayta boshlang.");
+        const existing = await env.DB.prepare("SELECT status FROM discount_claims WHERE discount_id=? AND user_id=? AND status IN ('pending','approved')").bind(id, uid).first();
+        const reason = discountEligibility(discount, s.data.orderData.service, new Date(), Boolean(existing));
+        if (reason) return send(env, chat, "Chegirma yaroqsiz bo‘lib qoldi: " + reason + " /cancel orqali qaytadan boshlang.");
+        discounts.push(discount);
+      }
+      return submitOrderSafely(env, m, Object.assign({}, s.data.orderData, { attachments: s.data.attachments || [] }), discounts, s.data.proofFile || null);
+    }
     if (s.state === "attachment_upload") await clearSession(env, uid);
     return send(env, chat, "Fayl yuborish yakunlandi.", { reply_markup: mainMenu });
   }
@@ -681,7 +741,7 @@ async function handleMessage(env, m) {
   }
   if (s.state === "discount") {
     if (["yo‘q", "yoq", "yo'q", "yo‘q.", "yoq.", "no", "-"].includes(text.toLowerCase())) {
-      await submitOrderSafely(env, m, s.data, []);
+      await beginOrderAttachments(env, chat, uid, s.data, []);
       return;
     }
     const result = await findDiscountsForOrder(env, uid, s.data.service, text);
@@ -690,9 +750,10 @@ async function handleMessage(env, m) {
       await saveSession(env, uid, "discount_proof", { orderData: s.data, discountIds: result.discounts.map(d => Number(d.id)) });
       return send(env, chat, "Bu chegirma uchun a’zolik yoki boshqa dalil hujjati kerak. Rasm yoki faylni yuboring; administrator tekshiradi.");
     }
-    await submitOrderSafely(env, m, s.data, result.discounts);
+    await beginOrderAttachments(env, chat, uid, s.data, result.discounts);
     return;
   }
+  if (s.state === "order_attachments") return send(env, chat, "Topshiriq fayllarini yuboring yoki «✅ Fayllar tugadi» tugmasini bosing.", { reply_markup: orderAttachmentsMenu });
   if (s.state === "attachment_upload") return send(env, chat, "PDF, rasm yoki boshqa fayl yuboring yoxud «✅ Fayllar tugadi» bosing.", { reply_markup: uploadMenu });
   if (s.state === "receipt_upload") return send(env, chat, "To‘lov chekini rasm yoki fayl ko‘rinishida yuboring.");
   if (s.state === "discount_proof") return send(env, chat, "Chegirmani tekshirish uchun rasm yoki hujjat yuboring.");
