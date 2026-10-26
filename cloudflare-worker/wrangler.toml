@@ -1,0 +1,8 @@
+name = "student-assistant-bot"
+main = "src/index.js"
+compatibility_date = "2026-10-26"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "student-assistant-bot-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
