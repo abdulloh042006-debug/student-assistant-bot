@@ -203,7 +203,7 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
       }
     }
     if (proofFile) {
-      await env.DB.prepare("INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','pending',?,?,?)")
+      await env.DB.prepare("INSERT OR IGNORE INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'attachment','pending',?,?,?)")
         .bind(orderId, message.from.id, proofFile.file_id, proofFile.file_unique_id || null, proofFile.file_name || "", proofFile.mime_type || "", proofFile.media_type, proofFile.source_chat_id || message.chat.id, proofFile.source_message_id || message.message_id).run();
     }
     for (const attachment of (data.attachments || [])) {
@@ -294,7 +294,7 @@ async function startReceiptUpload(env, chatId, uid, order) {
 }
 async function insertAttachment(env, m, orderId, file, type, kind, status = "not_required") {
   return env.DB.prepare(
-    "INSERT INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+    "INSERT OR IGNORE INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
   ).bind(
     orderId, m.from.id, file.file_id, file.file_unique_id || null, file.file_name || "",
     file.mime_type || "", kind, status, type, m.chat.id, m.message_id
@@ -339,19 +339,36 @@ async function handleUploadedFile(env, m, currentSession) {
   }
   if (state === "receipt_upload") {
     const orderId = Number(currentSession.data.orderId);
-    const order = await env.DB.prepare("SELECT id,user_id FROM orders WHERE id=? AND user_id=?").bind(orderId, m.from.id).first();
+    const order = await env.DB.prepare("SELECT id,user_id,payment_status FROM orders WHERE id=? AND user_id=?").bind(orderId, m.from.id).first();
     if (!order) { await clearSession(env, m.from.id); await send(env, m.chat.id, "Buyurtma topilmadi. /cancel qilib qayta urinib ko‘ring."); return true; }
-    const review = await env.DB.prepare("INSERT INTO payment_reviews(order_id,user_id,file_id,file_unique_id,status) VALUES(?,?,?,?, 'pending')")
-      .bind(orderId, m.from.id, file.file_id, file.file_unique_id || null).run();
-    await insertAttachment(env, m, orderId, file, file.media_type, "receipt", "pending");
-    await env.DB.prepare("UPDATE orders SET payment_status='Chek tekshirilmoqda' WHERE id=?").bind(orderId).run();
+    if (!["To‘lov kutilmoqda", "To‘lov rad etildi"].includes(order.payment_status)) {
+      await clearSession(env, m.from.id);
+      return send(env, m.chat.id,
+        order.payment_status === "Chek tekshirilmoqda"
+          ? "Bu buyurtma uchun chek allaqachon yuborilgan va administrator tekshiryapti."
+          : "Bu buyurtma hozir chek qabul qilish holatida emas. Administratorning to‘lov so‘rovini kuting.",
+        { reply_markup: mainMenu });
+    }
+    // Write the receipt, attachment, and order state atomically. If Telegram retries this update,
+    // the payment_status check above prevents a second review from being created.
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR IGNORE INTO payment_reviews(order_id,user_id,file_id,file_unique_id,status,source_chat_id,source_message_id) VALUES(?,?,?,?, 'pending',?,?)")
+        .bind(orderId, m.from.id, file.file_id, file.file_unique_id || null, m.chat.id, m.message_id),
+      env.DB.prepare("INSERT OR IGNORE INTO order_attachments(order_id,user_id,file_id,file_unique_id,file_name,mime_type,kind,review_status,media_type,source_chat_id,source_message_id) VALUES(?,?,?,?,?,?,'receipt','pending',?,?,?)")
+        .bind(orderId, m.from.id, file.file_id, file.file_unique_id || null, file.file_name || "", file.mime_type || "", file.media_type, m.chat.id, m.message_id),
+      env.DB.prepare("UPDATE orders SET payment_status='Chek tekshirilmoqda' WHERE id=? AND user_id=? AND payment_status IN ('To‘lov kutilmoqda','To‘lov rad etildi')")
+        .bind(orderId, m.from.id)
+    ]);
+    const review = await env.DB.prepare("SELECT id,status FROM payment_reviews WHERE order_id=? AND source_chat_id=? AND source_message_id=?")
+      .bind(orderId, m.chat.id, m.message_id).first();
+    if (!review) throw new Error("Receipt review could not be saved");
     await clearSession(env, m.from.id);
     await send(env, m.chat.id, "Chek buyurtma #" + orderId + " uchun qabul qilindi. Administrator tekshirgach xabar beriladi.", { reply_markup: mainMenu });
     await copyUserMessageToAdmin(env, m, "💳 To‘lov cheki — buyurtma #" + orderId);
     await send(env, Number(env.ADMIN_ID), "💳 To‘lov cheki: buyurtma #" + orderId + "\nFoydalanuvchi ID: " + m.from.id, {
       reply_markup: { inline_keyboard: [[
-        { text: "✅ To‘lovni tasdiqlash", callback_data: "receipt:approve:" + review.meta.last_row_id },
-        { text: "❌ Rad etish", callback_data: "receipt:reject:" + review.meta.last_row_id }
+        { text: "✅ To‘lovni tasdiqlash", callback_data: "receipt:approve:" + review.id },
+        { text: "❌ Rad etish", callback_data: "receipt:reject:" + review.id }
       ]] }
     });
     return true;
