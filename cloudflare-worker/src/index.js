@@ -91,7 +91,7 @@ function orderKeyboard(id) {
 }
 async function copyUserMessageToAdmin(env, message, caption) {
   try {
-    await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: message.chat.id, message_id: message.message_id });
+    await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: message.chat.id, message_id: message.message_id, caption: String(caption || "").slice(0, 900) });
   } catch (error) {
     console.error("Could not copy user attachment to admin");
     await send(env, Number(env.ADMIN_ID), "Ilovani ko‘chirishda xatolik: " + caption);
@@ -119,7 +119,7 @@ async function notifyAdmin(env, orderId) {
   const attachments = await env.DB.prepare("SELECT source_chat_id,source_message_id,media_type FROM order_attachments WHERE order_id=? ORDER BY id").bind(orderId).all();
   for (const file of attachments.results || []) {
     if (file.source_chat_id && file.source_message_id) {
-      try { await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: file.source_chat_id, message_id: file.source_message_id }); } catch (_) {}
+      try { await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: file.source_chat_id, message_id: file.source_message_id, caption: "Ilova — buyurtma #" + orderId }); } catch (_) {}
     }
   }
 }
@@ -193,7 +193,7 @@ async function createOrder(env, message, data, discounts = [], proofFile = null)
         { text: "❌ Rad etish", callback_data: "discountreview:reject:" + claim.id }
       ]] }
     });
-    if (proofFile) await copyUserMessageToAdmin(env, message, "chegirma hujjati");
+    /* The proof attachment has already been copied by notifyAdmin. */
   }
   return orderId;
 }
@@ -220,8 +220,15 @@ async function findDiscountsForOrder(env, uid, service, rawNames) {
 async function paymentInstructions(env, order) {
   const lines = ["💳 To‘lov ma’lumotlari", "Buyurtma #" + order.id];
   const amount = order.final_price === null ? null : Number(order.final_price);
-  if (amount === null) lines.push("Yakuniy narx hali administrator tomonidan tasdiqlanmagan.");
-  else lines.push("To‘lanadigan summa: " + amount.toLocaleString("uz-UZ") + " so‘m");
+  if (amount === null) {
+    lines.push("Yakuniy narx hali administrator tomonidan tasdiqlanmagan.", "To‘lov faqat administrator tasdiqlangan narx bilan so‘rov yuborgach amalga oshiriladi.");
+    return lines.join("\\n");
+  }
+  if (order.payment_status !== "To‘lov kutilmoqda") {
+    lines.push("Yakuniy narx: " + amount.toLocaleString("uz-UZ") + " so‘m.", "Administrator hali to‘lov so‘rovi yubormagan. Iltimos, so‘rovni kuting.");
+    return lines.join("\\n");
+  }
+  lines.push("To‘lanadigan summa: " + amount.toLocaleString("uz-UZ") + " so‘m");
   if (env.PAYMENT_CARD) lines.push("Karta: " + env.PAYMENT_CARD);
   if (env.PAYMENT_OWNER) lines.push("Karta egasi: " + env.PAYMENT_OWNER);
   if (env.PAYMENT_TEXT) lines.push("", env.PAYMENT_TEXT);
@@ -281,7 +288,7 @@ async function handleUploadedFile(env, m, currentSession) {
     await env.DB.prepare("UPDATE orders SET payment_status='Chek tekshirilmoqda' WHERE id=?").bind(orderId).run();
     await clearSession(env, m.from.id);
     await send(env, m.chat.id, "Chek buyurtma #" + orderId + " uchun qabul qilindi. Administrator tekshirgach xabar beriladi.", { reply_markup: mainMenu });
-    await copyUserMessageToAdmin(env, m, "to‘lov cheki");
+    await copyUserMessageToAdmin(env, m, "💳 To‘lov cheki — buyurtma #" + orderId);
     await send(env, Number(env.ADMIN_ID), "💳 To‘lov cheki: buyurtma #" + orderId + "\nFoydalanuvchi ID: " + m.from.id, {
       reply_markup: { inline_keyboard: [[
         { text: "✅ To‘lovni tasdiqlash", callback_data: "receipt:approve:" + review.meta.last_row_id },
@@ -295,7 +302,7 @@ async function handleUploadedFile(env, m, currentSession) {
     const order = await env.DB.prepare("SELECT id FROM orders WHERE id=? AND user_id=?").bind(orderId, m.from.id).first();
     if (!order) { await clearSession(env, m.from.id); await send(env, m.chat.id, "Buyurtma topilmadi. /cancel qilib qayta urinib ko‘ring."); return true; }
     await insertAttachment(env, m, orderId, file, file.media_type, "attachment", "not_required");
-    await copyUserMessageToAdmin(env, m, "buyurtma fayli");
+    await copyUserMessageToAdmin(env, m, "📎 Buyurtma #" + orderId + " fayli");
     await send(env, m.chat.id, "Fayl buyurtma #" + orderId + " ga biriktirildi. Yana fayl yuborishingiz yoki «✅ Fayllar tugadi» tugmasini bosishingiz mumkin.", { reply_markup: uploadMenu });
     return true;
   }
@@ -477,6 +484,7 @@ async function handleCallback(env, q) {
     if (!order) return send(env, Number(env.ADMIN_ID), "Buyurtma topilmadi.");
     if (order.final_price === null) return send(env, Number(env.ADMIN_ID), "Avval «💵 Narx/muddatni tasdiqlash» tugmasi orqali narxni tasdiqlang.");
     await env.DB.prepare("UPDATE orders SET payment_status='To‘lov kutilmoqda' WHERE id=?").bind(orderId).run();
+    order.payment_status = "To‘lov kutilmoqda";
     await send(env, order.user_id, await paymentInstructions(env, order), { reply_markup: { keyboard: [
       [{ text: "📤 To‘lov chekini yuborish" }], [{ text: "📦 Buyurtmalarim" }, { text: "💳 To‘lov haqida" }]
     ], resize_keyboard: true } });
@@ -512,12 +520,14 @@ async function handleCallback(env, q) {
     if (!claim) return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi allaqachon ko‘rilgan yoki topilmadi.");
     if (data[1] === "reject") {
       await env.DB.prepare("UPDATE discount_claims SET status='rejected' WHERE id=? AND status='pending'").bind(claimId).run();
+      await env.DB.prepare("UPDATE order_attachments SET review_status='rejected' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment'").bind(claim.order_id, claim.order_user).run();
       await env.DB.prepare("UPDATE discounts SET uses_count=CASE WHEN uses_count>0 THEN uses_count-1 ELSE 0 END WHERE id=?").bind(claim.discount_id).run();
       await send(env, claim.order_user, "❌ Buyurtma #" + claim.order_id + " uchun hujjatli chegirma tasdiqlanmadi. Administrator bilan bog‘lanishingiz mumkin.");
       return send(env, Number(env.ADMIN_ID), "Chegirma so‘rovi #" + claimId + " rad etildi.");
     }
     const calc = calculateDiscount(Number(claim.estimate), [{ kind: claim.kind, amount: claim.amount }]);
     await env.DB.prepare("UPDATE discount_claims SET status='approved' WHERE id=? AND status='pending'").bind(claimId).run();
+    await env.DB.prepare("UPDATE order_attachments SET review_status='approved' WHERE order_id=? AND user_id=? AND review_status='pending' AND kind='attachment'").bind(claim.order_id, claim.order_user).run();
     await env.DB.prepare("UPDATE orders SET discount_amount=?,applied_discount_ids=?,final_price=NULL WHERE id=?")
       .bind(calc.discountAmount, JSON.stringify([Number(claim.discount_id)]), claim.order_id).run();
     await send(env, claim.order_user, "✅ Hujjatli chegirma buyurtma #" + claim.order_id + " uchun tasdiqlandi. Chegirma: " + calc.discountAmount.toLocaleString("uz-UZ") + " so‘m. Chegirmadan keyingi taxmin: " + calc.finalPrice.toLocaleString("uz-UZ") + " so‘m. Yakuniy narxni administrator tasdiqlaydi.");
@@ -548,7 +558,7 @@ async function handleMessage(env, m) {
   if (text === "💰 Narxlar") return send(env, chat, priceText, { reply_markup: mainMenu });
   if (text === "💳 To‘lov haqida") {
     const order = await latestOrder(env, uid, true);
-    if (!order) return send(env, chat, String(env.PAYMENT_TEXT || "To‘lov rekvizitlari administrator tomonidan yuboriladi."), { reply_markup: mainMenu });
+    if (!order) return send(env, chat, "To‘lov rekvizitlari buyurtma uchun yakuniy narx tasdiqlanib, administrator to‘lov so‘rovini yuborgach ko‘rsatiladi.", { reply_markup: mainMenu });
     const fullOrder = await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(order.id).first();
     return send(env, chat, await paymentInstructions(env, fullOrder), { reply_markup: mainMenu });
   }
@@ -669,9 +679,7 @@ export default {
       return responseJson({ ok: true });
     } catch (error) {
       console.error("Telegram update processing failed", error && error.message ? error.message : "unknown");
-      if (insertedUpdateId !== null) {
-        try { await env.DB.prepare("DELETE FROM webhook_updates WHERE update_id=?").bind(insertedUpdateId).run(); } catch (_) {}
-      }
+      // Keep the update_id after a handler failure: retrying must not create duplicate orders or claims.
       return responseJson({ ok: false, error: "Update handling failed" }, 500);
     }
   }
