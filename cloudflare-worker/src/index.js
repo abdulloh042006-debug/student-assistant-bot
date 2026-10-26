@@ -241,11 +241,15 @@ async function paymentInstructions(env, order) {
   const amount = order.final_price === null ? null : Number(order.final_price);
   if (amount === null) {
     lines.push("Yakuniy narx hali administrator tomonidan tasdiqlanmagan.", "To‘lov faqat administrator tasdiqlangan narx bilan so‘rov yuborgach amalga oshiriladi.");
-    return lines.join("\\n");
+    return lines.join("\n");
   }
-  if (order.payment_status !== "To‘lov kutilmoqda") {
+  if (order.payment_status === "Chek tekshirilmoqda") {
+    lines.push("To‘lov summasi: " + amount.toLocaleString("uz-UZ") + " so‘m.", "Yuborgan chekingiz administrator tomonidan tekshirilmoqda.");
+    return lines.join("\n");
+  }
+  if (order.payment_status !== "To‘lov kutilmoqda" && order.payment_status !== "To‘lov rad etildi") {
     lines.push("Yakuniy narx: " + amount.toLocaleString("uz-UZ") + " so‘m.", "Administrator hali to‘lov so‘rovi yubormagan. Iltimos, so‘rovni kuting.");
-    return lines.join("\\n");
+    return lines.join("\n");
   }
   lines.push("To‘lanadigan summa: " + amount.toLocaleString("uz-UZ") + " so‘m");
   if (env.PAYMENT_CARD) lines.push("Karta: " + env.PAYMENT_CARD);
