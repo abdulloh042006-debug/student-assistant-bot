@@ -1,6 +1,7 @@
 -- Apply once after schema.sql and migrations/0002_files_and_payments.sql.
 -- Adds administrator price/deadline confirmation, attachment source metadata, and webhook deduplication.
 ALTER TABLE orders ADD COLUMN final_price INTEGER;
+ALTER TABLE orders ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN confirmed_deadline TEXT;
 ALTER TABLE orders ADD COLUMN applied_discount_ids TEXT NOT NULL DEFAULT '[]';
 
