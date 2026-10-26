@@ -89,10 +89,18 @@ function orderKeyboard(id) {
     ]
   ] };
 }
+async function copyMessageToAdmin(env, sourceChatId, sourceMessageId, mediaType, caption) {
+  const payload = { chat_id: Number(env.ADMIN_ID), from_chat_id: sourceChatId, message_id: sourceMessageId };
+  const needsSeparateCaption = mediaType === "voice" || mediaType === "video_note";
+  if (!needsSeparateCaption) payload.caption = String(caption || "").slice(0, 900);
+  await tg(env, "copyMessage", payload);
+  if (needsSeparateCaption) await send(env, Number(env.ADMIN_ID), String(caption || "").slice(0, 900));
+}
 async function copyUserMessageToAdmin(env, message, caption) {
+  const file = extractFile(message);
   try {
-    await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: message.chat.id, message_id: message.message_id, caption: String(caption || "").slice(0, 900) });
-  } catch (error) {
+    await copyMessageToAdmin(env, message.chat.id, message.message_id, file ? file.media_type : "document", caption);
+  } catch (_) {
     console.error("Could not copy user attachment to admin");
     await send(env, Number(env.ADMIN_ID), "Ilovani ko‘chirishda xatolik: " + caption);
   }
@@ -119,7 +127,7 @@ async function notifyAdmin(env, orderId) {
   const attachments = await env.DB.prepare("SELECT source_chat_id,source_message_id,media_type FROM order_attachments WHERE order_id=? ORDER BY id").bind(orderId).all();
   for (const file of attachments.results || []) {
     if (file.source_chat_id && file.source_message_id) {
-      try { await tg(env, "copyMessage", { chat_id: Number(env.ADMIN_ID), from_chat_id: file.source_chat_id, message_id: file.source_message_id, caption: "Ilova — buyurtma #" + orderId }); } catch (_) {}
+      try { await copyMessageToAdmin(env, file.source_chat_id, file.source_message_id, file.media_type, "Ilova — buyurtma #" + orderId); } catch (_) {}
     }
   }
 }
