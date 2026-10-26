@@ -480,12 +480,17 @@ async function handleAdminText(env, m, text, s) {
     const orderId = Number(s.data.orderId);
     const order = await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(orderId).first();
     if (!order) { await clearSession(env, uid); return send(env, chat, "Buyurtma topilmadi."); }
+    if (["Chek tekshirilmoqda", "To‘lov tasdiqlandi"].includes(order.payment_status)) {
+      await clearSession(env, uid);
+      return send(env, chat, "Narx o‘zgartirilmadi: chek tekshirilmoqda yoki to‘lov tasdiqlangan. Avval to‘lov holatini hal qiling.");
+    }
     const deadline = text === "-" ? order.deadline : text.slice(0, 120);
-    await env.DB.prepare("UPDATE orders SET final_price=?,confirmed_deadline=? WHERE id=?")
+    // A revised quote invalidates any earlier payment request. The admin must request payment again.
+    await env.DB.prepare("UPDATE orders SET final_price=?,confirmed_deadline=?,payment_status='To‘lov talab qilinmagan' WHERE id=?")
       .bind(s.data.finalPrice, deadline, orderId).run();
     await clearSession(env, uid);
-    await send(env, Number(env.ADMIN_ID), "Buyurtma #" + orderId + " uchun narx va muddat tasdiqlandi.");
-    return send(env, order.user_id, "💵 Buyurtma #" + orderId + " bo‘yicha administrator tasdiqladi.\nYakuniy narx: " + Number(s.data.finalPrice).toLocaleString("uz-UZ") + " so‘m\nMuddat: " + deadline + "\nTo‘lov haqida ma’lumot uchun «💳 To‘lov haqida» tugmasini bosing.");
+    await send(env, Number(env.ADMIN_ID), "Buyurtma #" + orderId + " uchun narx va muddat tasdiqlandi. Eski to‘lov so‘rovi bekor qilindi; kerak bo‘lsa yangi narx uchun qayta to‘lov so‘rang.");
+    return send(env, order.user_id, "💵 Buyurtma #" + orderId + " bo‘yicha administrator tasdiqladi.\nYakuniy narx: " + Number(s.data.finalPrice).toLocaleString("uz-UZ") + " so‘m\nMuddat: " + deadline + "\nYangi to‘lov so‘rovi yuborilmaguncha to‘lov qilmang.");
   }
   if (s.state === "discount_name") {
     if (!text || text.length > 60) return send(env, chat, "Chegirma nomi 1–60 belgi bo‘lsin.");
@@ -563,8 +568,12 @@ async function handleCallback(env, q) {
   }
   if (data[0] === "price") {
     const orderId = Number(data[1]);
-    const order = await env.DB.prepare("SELECT id,final_price FROM orders WHERE id=?").bind(orderId).first();
+    if (!Number.isSafeInteger(orderId) || orderId < 1) return send(env, Number(env.ADMIN_ID), "Buyurtma raqami noto‘g‘ri.");
+    const order = await env.DB.prepare("SELECT id,final_price,payment_status FROM orders WHERE id=?").bind(orderId).first();
     if (!order) return send(env, Number(env.ADMIN_ID), "Buyurtma topilmadi.");
+    if (["Chek tekshirilmoqda", "To‘lov tasdiqlandi"].includes(order.payment_status)) {
+      return send(env, Number(env.ADMIN_ID), "Bu buyurtma uchun chek hozir tekshirilmoqda yoki to‘lov tasdiqlangan. Narxni o‘zgartirishdan oldin to‘lov holatini administrator orqali hal qiling.");
+    }
     await saveSession(env, q.from.id, "admin_price", { orderId });
     return send(env, Number(env.ADMIN_ID), "Buyurtma #" + orderId + " uchun yakuniy narxni so‘mda kiriting (faqat son). Hozirgi tasdiqlangan narx: " + (order.final_price === null ? "yo‘q" : order.final_price));
   }
