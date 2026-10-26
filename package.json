@@ -1,0 +1,12 @@
+{
+  "name": "student-assistant-bot-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check cloudflare-worker/src/index.js && node --check cloudflare-worker/src/domain.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
