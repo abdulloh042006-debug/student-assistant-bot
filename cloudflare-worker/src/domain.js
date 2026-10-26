@@ -18,8 +18,10 @@ export function calculateDiscount(basePrice, discounts) {
 }
 
 export function normalizeDate(value, endOfDay = false) {
-  if (!value || value === "yo‘q" || value.toLowerCase() === "yoq") return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const raw = String(value || "").trim();
+  const normalized = raw.toLowerCase().replace(/[’‘'`]/g, "");
+  if (!normalized || normalized === "yoq") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
   const parsed = new Date(value + (endOfDay ? "T23:59:59.999Z" : "T00:00:00.000Z"));
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return undefined;
   return parsed.toISOString();
