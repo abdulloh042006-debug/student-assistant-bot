@@ -344,6 +344,13 @@ async function handleUploadedFile(env, m, currentSession) {
       await saveSession(env, m.from.id, "receipt_upload", { orderId: order.id });
       return handleUploadedFile(env, m, await session(env, m.from.id));
     }
+    const pending = await env.DB.prepare("SELECT id FROM orders WHERE user_id=? AND payment_status='Chek tekshirilmoqda' ORDER BY id DESC LIMIT 1").bind(m.from.id).first();
+    if (pending) {
+      await send(env, m.chat.id, "Buyurtma #" + pending.id + " uchun oldingi chek hali tekshirilmoqda. Yangi chekni faqat administrator rad etganidan keyin yuboring.", { reply_markup: mainMenu });
+      return true;
+    }
+    await send(env, m.chat.id, "Hozir chek yuborish mumkin emas. Administrator to‘lov so‘rovi yuborgan buyurtma bo‘lishi kerak.", { reply_markup: mainMenu });
+    return true;
   }
   const order = await latestOrder(env, m.from.id, false);
   if (!order) {
@@ -688,8 +695,9 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") return new Response("Student Assistant webhook worker", { headers: { "content-type": "text/plain; charset=utf-8" } });
     if (request.method !== "POST" || url.pathname !== "/telegram") return new Response("Not found", { status: 404 });
-    if (!env.BOT_TOKEN || !env.ADMIN_ID || !env.DB || !env.WEBHOOK_SECRET) {
-      return responseJson({ ok: false, error: "Worker secrets or D1 binding missing" }, 500);
+    if (!env.BOT_TOKEN || !env.ADMIN_ID || !Number.isSafeInteger(Number(env.ADMIN_ID)) || Number(env.ADMIN_ID) <= 0 ||
+        !env.DB || !env.WEBHOOK_SECRET || !/^[A-Za-z0-9_-]{32,256}$/.test(env.WEBHOOK_SECRET)) {
+      return responseJson({ ok: false, error: "Worker secrets or D1 binding missing/invalid" }, 500);
     }
     if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
       return responseJson({ ok: false, error: "Unauthorized" }, 401);
